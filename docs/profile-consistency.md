@@ -159,3 +159,4 @@ maintainers to consider:
 - Profiles are compared with one reference language (English by default, `--reference-language` locally).
 - Link checks see what an anonymous client sees. Some sites block automated requests (403/429). Those links are reported as "could not be verified", not as broken.
 - At most 200 links per profile are checked.
+- **Observed on 2026-11-27:** on one run, GitHub-hosted runners received the catalogue pages *without* the structured data (HTTP 200), while the next run got the full pages. The check reported this correctly as "data unavailable", not as a discrepancy, and the message now includes the HTTP status, size, page title and server header. If it recurs often, ask the website maintainers whether bot protection treats runner IP ranges differently. Do not work around it by spoofing a browser user agent.
