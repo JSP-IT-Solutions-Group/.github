@@ -1,0 +1,2 @@
+# Fixture bytes are hashed by the tests: never convert line endings.
+tests/release-readiness/fixtures/** -text

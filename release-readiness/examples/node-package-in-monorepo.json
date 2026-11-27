@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JSP-IT-Solutions-Group/.github/release-readiness-v1/release-readiness/config.schema.json",
+  "profile": "node",
+  "documents": { "required": ["README", "CHANGELOG"], "recommended": [] },
+  "version": { "tag_prefix": "web-v" },
+  "changelog": { "warn_unreleased": true },
+  "checksums": { "mode": "off" }
+}

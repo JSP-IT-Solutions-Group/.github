@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../../../release-readiness/config.schema.json",
+  "profile": "python",
+  "version": {
+    "sources": [
+      {
+        "type": "regex",
+        "path": "src/synthetic_pkg/__init__.py",
+        "pattern": "^__version__\\s*=\\s*[\"'](?P<version>[^\"']+)[\"']"
+      }
+    ]
+  },
+  "changelog": { "date": "require" },
+  "checksums": { "mode": "required", "artifacts_dir": "dist", "unlisted": "fail" }
+}

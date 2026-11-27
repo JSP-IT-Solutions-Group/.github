@@ -1,0 +1,9 @@
+# Review ownership for shared release-readiness automation.
+# Replace with a maintainers team once one exists in the organization.
+/.github/workflows/release-readiness*.yml  @JSP-IT
+/.github/dependabot.yml                    @JSP-IT
+/.github/CODEOWNERS                        @JSP-IT
+/release-readiness/                        @JSP-IT
+/tests/release-readiness/                  @JSP-IT
+/workflow-templates/release-readiness*     @JSP-IT
+/docs/release-readiness.md                 @JSP-IT

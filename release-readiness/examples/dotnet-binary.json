@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JSP-IT-Solutions-Group/.github/release-readiness-v1/release-readiness/config.schema.json",
+  "profile": "dotnet",
+  "project_type": "binary",
+  "documents": {
+    "required": ["README", "LICENSE", "CHANGELOG", "SECURITY"],
+    "recommended": ["CONTRIBUTING", "CODE_OF_CONDUCT", "NOTICE"]
+  },
+  "version": {
+    "sources": [{ "type": "msbuild", "path": "Directory.Build.props" }]
+  },
+  "checksums": { "artifacts_dir": "artifacts", "algorithm": "sha256" }
+}

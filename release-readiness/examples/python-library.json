@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JSP-IT-Solutions-Group/.github/release-readiness-v1/release-readiness/config.schema.json",
+  "profile": "python",
+  "version": {
+    "sources": [
+      { "type": "regex", "path": "src/example/__init__.py", "pattern": "^__version__ = \"(?P<version>[^\"]+)\"" }
+    ]
+  },
+  "changelog": { "date": "require" },
+  "checksums": { "mode": "auto", "artifacts_dir": "dist" }
+}

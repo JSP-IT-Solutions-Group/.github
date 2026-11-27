@@ -1,0 +1,19 @@
+{
+  "$schema": "./config.schema.json",
+  "profile": "generic",
+  "documents": {
+    "required": ["README", "CHANGELOG"],
+    "recommended": []
+  },
+  "version": {
+    "sources": [
+      { "type": "plain", "path": "VERSION" },
+      {
+        "type": "regex",
+        "path": "release_readiness.py",
+        "pattern": "^__version__ = \"(?P<version>[^\"]+)\""
+      }
+    ]
+  },
+  "checksums": { "mode": "off" }
+}

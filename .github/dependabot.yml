@@ -1,0 +1,13 @@
+# Keeps the pinned action SHAs in this repository's workflows current.
+# Dependabot opens pull requests only; every update is reviewed by a human.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
