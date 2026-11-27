@@ -1,0 +1,26 @@
+# Example caller for a profile repository (used in JSP-IT/JSP-IT as
+# .github/workflows/profile-consistency.yml). Read-only: it reports
+# discrepancies between README.md and the JSP-Product catalogues and never
+# edits the README.
+
+name: Profile consistency
+
+on:
+  pull_request:
+    paths: ["README.md", ".github/workflows/profile-consistency.yml"]
+  schedule:
+    - cron: "23 6 * * 1" # Mondays 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile-consistency:
+    permissions:
+      contents: read
+    # Pin `uses:` and `tooling-ref` to the same tag or commit SHA.
+    uses: JSP-IT-Solutions-Group/.github/.github/workflows/profile-consistency.yml@profile-consistency-v1
+    with:
+      counts-profiles: README.md
+      tooling-ref: profile-consistency-v1

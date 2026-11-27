@@ -1,0 +1,143 @@
+# Reusable, read-only consistency check between GitHub profile READMEs and the
+# Finnish and English JSP-Product catalogues. It reports count discrepancies,
+# language-parity problems and broken profile links in the job summary. It never
+# edits profiles or the website, uses no secrets and needs only contents: read.
+#
+# Documentation: docs/profile-consistency.md
+
+name: Profile consistency
+
+on:
+  workflow_call:
+    inputs:
+      profiles:
+        description: Comma-separated profile READMEs (paths in the caller repository or https URLs). Counts are compared when present.
+        type: string
+        default: ""
+      counts-profiles:
+        description: Comma-separated profile READMEs that must state the catalogue counts.
+        type: string
+        default: ""
+      catalogue-en-url:
+        description: English catalogue page.
+        type: string
+        default: https://jsp-it.com/products_jsp_overview
+      catalogue-fi-url:
+        description: Finnish catalogue page.
+        type: string
+        default: https://jsp-it.fi/products_jsp_overview
+      check-links:
+        description: Check links in the profiles.
+        type: boolean
+        default: true
+      fail-on-unavailable:
+        description: Fail the job when catalogue or profile data cannot be fetched (default is a warning).
+        type: boolean
+        default: false
+      enforce:
+        description: Fail the job on discrepancies or broken links. Set false to only report.
+        type: boolean
+        default: true
+      tooling-ref:
+        description: Ref of JSP-IT-Solutions-Group/.github to load the checker from. Use the same ref as in `uses:`.
+        type: string
+        default: profile-consistency-v1
+      runs-on:
+        description: Runner label (needs bash and Python 3.11+).
+        type: string
+        default: ubuntu-24.04
+    outputs:
+      result:
+        description: pass, warn, fail or error.
+        value: ${{ jobs.check.outputs.result }}
+      unavailable:
+        description: true when catalogue or profile data could not be fetched.
+        value: ${{ jobs.check.outputs.unavailable }}
+      solutions:
+        description: Solutions in the English catalogue.
+        value: ${{ jobs.check.outputs.solutions }}
+      groups:
+        description: Solution groups in the English catalogue.
+        value: ${{ jobs.check.outputs.groups }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Profile consistency
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.check.outputs.result }}
+      unavailable: ${{ steps.check.outputs.unavailable }}
+      solutions: ${{ steps.check.outputs.solutions }}
+      groups: ${{ steps.check.outputs.groups }}
+    steps:
+      - name: Check out the repository with the profile
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: project
+          persist-credentials: false
+
+      - name: Check out the checker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JSP-IT-Solutions-Group/.github
+          ref: ${{ inputs.tooling-ref }}
+          path: .profile-consistency-tooling
+          persist-credentials: false
+          sparse-checkout: profile-consistency
+
+      - name: Compare profiles with the catalogues
+        id: check
+        shell: bash
+        working-directory: project
+        env:
+          PC_TOOL: ${{ github.workspace }}/.profile-consistency-tooling/profile-consistency/check_profile_consistency.py
+          PC_PROFILES: ${{ inputs.profiles }}
+          PC_COUNTS_PROFILES: ${{ inputs.counts-profiles }}
+          PC_EN: ${{ inputs.catalogue-en-url }}
+          PC_FI: ${{ inputs.catalogue-fi-url }}
+          PC_CHECK_LINKS: ${{ inputs.check-links }}
+        run: |
+          set -uo pipefail
+          args=(--annotations --summary-file "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT")
+          if [ -n "$PC_EN" ]; then args+=(--catalogue "en=$PC_EN"); fi
+          if [ -n "$PC_FI" ]; then args+=(--catalogue "fi=$PC_FI"); fi
+          add_list() {
+            local flag=$1 item
+            local -a items
+            IFS=',' read -ra items <<< "$2"
+            for item in "${items[@]}"; do
+              item="$(echo "$item" | xargs)"
+              if [ -n "$item" ]; then args+=("$flag" "$item"); fi
+            done
+          }
+          add_list --profile "$PC_PROFILES"
+          add_list --counts-profile "$PC_COUNTS_PROFILES"
+          if [ "$PC_CHECK_LINKS" != "true" ]; then args+=(--no-links); fi
+
+          status=0
+          python3 "$PC_TOOL" "${args[@]}" || status=$?
+          echo "exit-code=$status" >> "$GITHUB_OUTPUT"
+          echo "Checker exit code: $status (0 consistent, 1 discrepancy, 3 data unavailable)"
+          if ! grep -q '^result=' "$GITHUB_OUTPUT"; then
+            echo "::error title=Profile consistency::The checker did not produce a result (exit code $status)"
+            echo "result=error" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enforce the result
+        if: >-
+          steps.check.outputs.result == 'error'
+          || (inputs.enforce && steps.check.outputs.result == 'fail')
+          || (inputs.fail-on-unavailable && steps.check.outputs.unavailable == 'true')
+        shell: bash
+        env:
+          RESULT: ${{ steps.check.outputs.result }}
+          UNAVAILABLE: ${{ steps.check.outputs.unavailable }}
+        run: |
+          echo "::error title=Profile consistency::result=${RESULT}, data unavailable=${UNAVAILABLE}. See the job summary; profiles must be updated by hand."
+          exit 1

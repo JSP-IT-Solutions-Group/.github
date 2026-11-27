@@ -1,0 +1,81 @@
+# Tests for the profile-consistency checker, plus a weekly read-only check of
+# the organization profile and the JSP-IT company profile against the live
+# catalogues. Nothing is edited; discrepancies appear in the job summary.
+
+name: Profile consistency check
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/profile-consistency*.yml"
+      - "profile-consistency/**"
+      - "tests/profile-consistency/**"
+      - "profile/README.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/profile-consistency*.yml"
+      - "profile-consistency/**"
+      - "tests/profile-consistency/**"
+      - "profile/README.md"
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-consistency-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint workflows
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (checksum verified)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+      - name: Run actionlint
+        run: |
+          "$RUNNER_TEMP/actionlint" -color .github/workflows/profile-consistency*.yml profile-consistency/examples/*.yml
+
+  unit-tests:
+    name: Unit tests
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run unit tests (synthetic fixtures, no external network)
+        run: |
+          python3 -I -m py_compile profile-consistency/check_profile_consistency.py
+          python3 -I -m unittest discover -s tests/profile-consistency -v
+
+  live-check:
+    name: Live profiles vs catalogues
+    permissions:
+      contents: read
+    uses: ./.github/workflows/profile-consistency.yml
+    with:
+      profiles: profile/README.md
+      counts-profiles: https://raw.githubusercontent.com/JSP-IT/JSP-IT/main/README.md
+      tooling-ref: ${{ github.sha }}
+      # Pull requests only report; scheduled and manual runs fail on discrepancies.
+      enforce: ${{ github.event_name != 'pull_request' }}
