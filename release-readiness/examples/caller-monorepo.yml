@@ -1,0 +1,32 @@
+# Example: a repository with several independently versioned packages.
+# Each package is checked in its own directory; tags look like web-v1.2.3.
+
+name: Release readiness (monorepo)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - directory: packages/web
+            tag-prefix: web-v
+          - directory: packages/cli
+            tag-prefix: cli-v
+    permissions:
+      contents: read
+    uses: JSP-IT-Solutions-Group/.github/.github/workflows/release-readiness.yml@release-readiness-v1
+    with:
+      tooling-ref: release-readiness-v1
+      working-directory: ${{ matrix.directory }}
+      tag-prefix: ${{ matrix.tag-prefix }}
+      # Licence and community files live at the repository root in this layout.
+      required-documents: README,CHANGELOG
+      recommended-documents: none

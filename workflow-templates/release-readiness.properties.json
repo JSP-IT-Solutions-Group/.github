@@ -1,0 +1,7 @@
+{
+  "name": "JSP-IT release readiness",
+  "description": "Read-only check of project documents, version consistency, changelog entry and checksum manifests before a release. Publishes nothing.",
+  "iconName": "octicon checklist",
+  "categories": ["Automation"],
+  "labels": ["release", "quality"]
+}

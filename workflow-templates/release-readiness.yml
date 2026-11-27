@@ -1,0 +1,21 @@
+# Opt-in template: appears under Actions > New workflow in organization
+# repositories. Nothing runs until a maintainer commits it to a repository.
+name: Release readiness
+
+on:
+  pull_request:
+    branches: ["release/**"]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    permissions:
+      contents: read
+    uses: JSP-IT-Solutions-Group/.github/.github/workflows/release-readiness.yml@release-readiness-v1
+    with:
+      tooling-ref: release-readiness-v1

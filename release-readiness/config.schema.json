@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JSP-IT-Solutions-Group/.github/blob/main/release-readiness/config.schema.json",
+  "title": "release-readiness configuration",
+  "description": "Optional per-repository configuration, read from .github/release-readiness.json (relative to the working directory). Workflow inputs override these values. Unknown keys are rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "profile": {
+      "description": "Language profile. 'auto' detects profiles from marker files.",
+      "enum": ["auto", "generic", "python", "node", "dotnet", "rust", "php", "cpp"],
+      "default": "auto"
+    },
+    "project_type": {
+      "description": "Preset: 'binary' requires a checksum manifest and fails on unlisted artifacts; 'application' also recommends SUPPORT.",
+      "enum": ["library", "application", "binary"],
+      "default": "library"
+    },
+    "fail_on_warnings": { "type": "boolean", "default": false },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required": { "$ref": "#/$defs/documentList", "default": ["README", "LICENSE", "CHANGELOG"] },
+        "recommended": { "$ref": "#/$defs/documentList", "default": ["SECURITY", "CONTRIBUTING", "CODE_OF_CONDUCT"] },
+        "search_paths": {
+          "description": "Directories searched for community documents (LICENSE, NOTICE and AUTHORS are only looked up at the root).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/relativePath" },
+          "default": [".", ".github", "docs"]
+        },
+        "stub_bytes": {
+          "description": "Documents with fewer non-whitespace bytes than this produce a warning.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 64
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expected": { "type": ["string", "null"], "description": "Expected version. Normally taken from the release tag." },
+        "tag_prefix": { "type": "string", "default": "v" },
+        "scheme": { "enum": ["semver", "pep440", "calver", "any", null], "default": null },
+        "auto_detect": { "type": "boolean", "default": true, "description": "Also use the profile's well-known version files when present." },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "path"],
+            "properties": {
+              "type": {
+                "enum": ["plain", "json", "toml", "regex", "package-json", "package-lock", "composer", "vcpkg", "pyproject", "setup-cfg", "cargo", "msbuild", "nuspec", "cmake", "meson"]
+              },
+              "path": { "$ref": "#/$defs/relativePath", "description": "File path or glob, relative to the working directory." },
+              "key": { "type": "string", "description": "Dotted key for json/toml sources (default: version)." },
+              "pattern": { "type": "string", "description": "Regex for 'regex' sources; use a named group (?P<version>...) or the first group." },
+              "required": { "type": "boolean", "default": true }
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "require_entry": { "type": "boolean", "default": true },
+        "date": { "enum": ["require", "warn", "ignore"], "default": "warn" },
+        "warn_unreleased": { "type": "boolean", "default": true }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["off", "auto", "required"], "default": "auto" },
+        "artifacts_dir": { "$ref": "#/$defs/relativePath", "default": "dist" },
+        "manifests": { "type": "array", "items": { "$ref": "#/$defs/relativePath" }, "default": [] },
+        "algorithm": { "enum": ["auto", "sha256", "sha384", "sha512"], "default": "auto" },
+        "unlisted": { "enum": ["ignore", "warn", "fail"], "default": "warn" }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "(^/|^[A-Za-z]:|(^|[\\\\/])\\.\\.([\\\\/]|$))" }
+    },
+    "documentList": {
+      "description": "Logical names (README, LICENSE, CHANGELOG, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, SUPPORT, NOTICE, AUTHORS) or relative paths.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+[project]
+name = "synthetic-pkg"
+version = "1.4.0"
+description = "Synthetic fixture"
+requires-python = ">=3.11"

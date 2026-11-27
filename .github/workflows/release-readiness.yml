@@ -1,0 +1,206 @@
+# Reusable, opt-in release-readiness check for JSP-IT Solutions Group repositories.
+#
+# Read-only: it checks project documents, version consistency, the changelog
+# entry and optional checksum manifests, and writes a job summary. It never
+# publishes releases, pushes tags, edits files or uses secrets.
+#
+# Documentation: docs/release-readiness.md
+# Owner:         JSP-IT Solutions Group maintainers (see CODEOWNERS)
+#
+# Usage (pin both refs to the same release tag or commit SHA):
+#
+#   jobs:
+#     release-readiness:
+#       uses: JSP-IT-Solutions-Group/.github/.github/workflows/release-readiness.yml@release-readiness-v1
+#       with:
+#         tooling-ref: release-readiness-v1
+
+name: Release readiness
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Project directory to check, relative to the repository root.
+        type: string
+        default: "."
+      config-path:
+        description: Config file relative to working-directory. Default .github/release-readiness.json when present.
+        type: string
+        default: ""
+      profile:
+        description: "Language profile: auto, generic, python, node, dotnet, rust, php or cpp."
+        type: string
+        default: ""
+      project-type:
+        description: "Project type preset: library, application or binary."
+        type: string
+        default: ""
+      version:
+        description: Expected release version. Default is the tag name (minus tag-prefix) on tag builds.
+        type: string
+        default: ""
+      tag-prefix:
+        description: Prefix stripped from release tags (default "v"; use "none" for no prefix).
+        type: string
+        default: ""
+      version-scheme:
+        description: "semver, pep440, calver or any (default depends on the profile)."
+        type: string
+        default: ""
+      required-documents:
+        description: Comma-separated logical names or paths (README, LICENSE, CHANGELOG, ...), or "none".
+        type: string
+        default: ""
+      recommended-documents:
+        description: Comma-separated logical names or paths that only warn when missing, or "none".
+        type: string
+        default: ""
+      changelog-path:
+        description: Changelog path relative to working-directory (default autodetect).
+        type: string
+        default: ""
+      checksums:
+        description: "Checksum verification: off, auto or required."
+        type: string
+        default: ""
+      checksum-manifest:
+        description: Comma-separated manifest paths relative to working-directory (default autodetect).
+        type: string
+        default: ""
+      artifacts-dir:
+        description: Directory with release artifacts, relative to working-directory (default dist).
+        type: string
+        default: ""
+      artifact-name:
+        description: Name of an artifact uploaded earlier in the same workflow run to verify instead of artifacts-dir.
+        type: string
+        default: ""
+      fail-on-warnings:
+        description: Treat warnings as failures.
+        type: boolean
+        default: false
+      enforce:
+        description: Fail the job when the result is fail. Set false to only report.
+        type: boolean
+        default: true
+      tooling-ref:
+        description: Ref of JSP-IT-Solutions-Group/.github to load the checker from. Use the same ref as in `uses:`.
+        type: string
+        default: release-readiness-v1
+      runs-on:
+        description: Runner label. The runner needs bash and Python 3.11 or newer.
+        type: string
+        default: ubuntu-24.04
+    outputs:
+      result:
+        description: "pass, warn, fail or error."
+        value: ${{ jobs.check.outputs.result }}
+      version:
+        description: Release version that was checked (empty when undetermined).
+        value: ${{ jobs.check.outputs.version }}
+      failures:
+        description: Number of failed checks.
+        value: ${{ jobs.check.outputs.failures }}
+      warnings:
+        description: Number of warnings.
+        value: ${{ jobs.check.outputs.warnings }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Release readiness
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.check.outputs.result }}
+      version: ${{ steps.check.outputs.version }}
+      failures: ${{ steps.check.outputs.failures }}
+      warnings: ${{ steps.check.outputs.warnings }}
+    steps:
+      - name: Check out the repository under review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: project
+          persist-credentials: false
+
+      - name: Check out the release-readiness tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JSP-IT-Solutions-Group/.github
+          ref: ${{ inputs.tooling-ref }}
+          path: .release-readiness-tooling
+          persist-credentials: false
+          sparse-checkout: release-readiness
+
+      - name: Download release artifacts
+        if: inputs.artifact-name != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ runner.temp }}/release-artifacts
+
+      - name: Run release-readiness checks
+        id: check
+        shell: bash
+        working-directory: project
+        env:
+          RR_TOOL: ${{ github.workspace }}/.release-readiness-tooling/release-readiness/release_readiness.py
+          RR_ROOT: ${{ inputs.working-directory }}
+          RR_CONFIG: ${{ inputs.config-path }}
+          RR_PROFILE: ${{ inputs.profile }}
+          RR_PROJECT_TYPE: ${{ inputs.project-type }}
+          RR_VERSION: ${{ inputs.version }}
+          RR_TAG_PREFIX: ${{ inputs.tag-prefix }}
+          RR_VERSION_SCHEME: ${{ inputs.version-scheme }}
+          RR_REQUIRED_DOCUMENTS: ${{ inputs.required-documents }}
+          RR_RECOMMENDED_DOCUMENTS: ${{ inputs.recommended-documents }}
+          RR_CHANGELOG: ${{ inputs.changelog-path }}
+          RR_CHECKSUMS: ${{ inputs.checksums }}
+          RR_CHECKSUM_MANIFEST: ${{ inputs.checksum-manifest }}
+          RR_ARTIFACTS_DIR: ${{ inputs.artifact-name != '' && format('{0}/release-artifacts', runner.temp) || inputs.artifacts-dir }}
+          RR_FAIL_ON_WARNINGS: ${{ inputs.fail-on-warnings }}
+        run: |
+          set -uo pipefail
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "::error title=Release readiness::python3 (3.11 or newer) is required on the runner"
+            echo "result=error" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          args=(--root "$RR_ROOT" --annotations --annotation-path-prefix "$RR_ROOT"
+                --summary-file "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT")
+          add() { if [ -n "$2" ]; then args+=("$1" "$2"); fi; }
+          add --config "$RR_CONFIG"
+          add --profile "$RR_PROFILE"
+          add --project-type "$RR_PROJECT_TYPE"
+          add --version "$RR_VERSION"
+          add --tag-prefix "$RR_TAG_PREFIX"
+          add --version-scheme "$RR_VERSION_SCHEME"
+          add --required-documents "$RR_REQUIRED_DOCUMENTS"
+          add --recommended-documents "$RR_RECOMMENDED_DOCUMENTS"
+          add --changelog "$RR_CHANGELOG"
+          add --checksums "$RR_CHECKSUMS"
+          add --checksum-manifest "$RR_CHECKSUM_MANIFEST"
+          add --artifacts-dir "$RR_ARTIFACTS_DIR"
+          if [ "$RR_FAIL_ON_WARNINGS" = "true" ]; then args+=(--fail-on-warnings); fi
+
+          status=0
+          python3 "$RR_TOOL" "${args[@]}" || status=$?
+          echo "Checker exit code: $status (0 = pass/warn, 1 = fail, 2 = configuration error)"
+          if ! grep -q '^result=' "$GITHUB_OUTPUT"; then
+            echo "::error title=Release readiness::The checker did not produce a result (exit code $status)"
+            echo "result=error" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enforce the result
+        if: inputs.enforce && steps.check.outputs.result != 'pass' && steps.check.outputs.result != 'warn'
+        shell: bash
+        env:
+          RESULT: ${{ steps.check.outputs.result }}
+        run: |
+          echo "::error title=Release readiness::Result is '${RESULT}'. Open the job summary for the failing checks."
+          exit 1
