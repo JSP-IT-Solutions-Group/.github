@@ -38,6 +38,17 @@ Our development interests span multiple languages, frameworks, and platforms.
 
 We select technologies based on the needs of each project rather than restricting ourselves to a single ecosystem.
 
+## 🧭 Engineering Principles
+
+Our Open-Source Philosophy says what we value; these principles describe how we aim to practise it. They are principles we work towards, not audited or automatically enforced rules, and individual repositories may set stricter requirements.
+
+- **Reviewed changes:** Changes go through a pull request with a clear description and are reviewed by someone other than the author before merging.
+- **Reproducible tests:** Tests and builds should pass from a clean checkout with documented commands and pinned dependencies, in CI as well as locally.
+- **Maintainability:** Small, focused changes, readable code and documentation updated in the same change keep work easy to review and maintain.
+- **Responsible AI assistance:** AI tools can help draft code and text. A person reviews, tests and takes responsibility for the result, and credentials or confidential data are never shared with AI tools.
+- **Dependency licensing:** Check a dependency's license before adding it, keep the required notices, and avoid combining code under incompatible licenses.
+- **Upstream contribution etiquette:** Follow each project's contribution guide, code of conduct and policy on AI-assisted contributions. Discuss larger changes in an issue first, keep pull requests focused, and respect maintainers' decisions and time.
+
 ## 🌍 Collaboration & Contributions
 
 This organization serves as a shared environment for software engineering and collaborative development.
