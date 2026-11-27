@@ -8,9 +8,7 @@ Release tags are `release-readiness-vMAJOR.MINOR.PATCH`; the moving tag
 
 ## [Unreleased]
 
-## [1.0.0] - Unreleased
-
-Replace `Unreleased` in the heading above with the release date when tagging.
+## [1.0.0] - 2026-11-27
 
 ### Added
 
@@ -25,3 +23,6 @@ Replace `Unreleased` in the heading above with the release date when tagging.
   annotations and job outputs.
 - JSON Schema for `.github/release-readiness.json`.
 - Synthetic fixtures, unit tests and a self-test workflow with actionlint.
+
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/release-readiness-v1.0.0...main
+[1.0.0]: https://github.com/JSP-IT-Solutions-Group/.github/tree/release-readiness-v1.0.0
