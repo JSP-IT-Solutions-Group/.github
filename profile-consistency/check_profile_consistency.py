@@ -250,8 +250,13 @@ def extract_catalogue(language: str, fetched: Fetched) -> Catalogue:
         cat.groups = len(set(cards))
         cat.signals["fallback"] = "counted from product cards"
     if cat.solutions is None or cat.groups is None:
+        title = re.search(r"<title[^>]*>(.*?)</title>", document, re.IGNORECASE | re.DOTALL)
+        served = (f"server answered HTTP {fetched.status} with {len(document)} characters"
+                  + (f", title “{html_lib.unescape(title.group(1)).strip()[:80]}”" if title else "")
+                  + (f", server {fetched.headers['server']}" if fetched.headers.get("server") else ""))
         cat.error = "catalogue counts could not be determined: " + "; ".join(
-            str(v) for k, v in cat.signals.items() if k.startswith("structured") and isinstance(v, str))
+            str(v) for k, v in cat.signals.items() if k.startswith("structured") and isinstance(v, str)) \
+            + f" ({served}; a bot-protection or error page is a likely cause)"
     return cat
 
 

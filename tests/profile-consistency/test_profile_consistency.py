@@ -185,6 +185,7 @@ class Unavailable(Base):
         code, report, _, _ = self.run_check("--catalogue", f"en={FIX / 'catalogue-en-no-data.html'}", "--no-links")
         self.assertEqual(code, 3, report)
         self.assertFinding(report, "Catalogue", "warn", r"#jsp-solution-advisor-catalog not found")
+        self.assertFinding(report, "Catalogue", "warn", r"HTTP 200 with \d+ characters, title “Synthetic catalogue")
 
     def test_invalid_structured_json_falls_back_with_warning(self) -> None:
         code, report, _, _ = self.run_check("--catalogue", f"en={FIX / 'catalogue-en-invalid-json.html'}",
