@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-11-27
 
 ### Added
 
@@ -15,3 +15,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - Distinct "data unavailable" outcome (exit code 3) that is never reported as a
   discrepancy.
 - Reusable workflow, weekly scheduled check, synthetic fixtures and tests.
+
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...main
+[1.0.0]: https://github.com/JSP-IT-Solutions-Group/.github/tree/profile-consistency-v1.0.0
