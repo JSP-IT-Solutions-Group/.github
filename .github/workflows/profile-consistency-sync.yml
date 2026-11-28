@@ -113,8 +113,10 @@ jobs:
             sleep "$SYNC_RETRY_DELAY"
           done
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          cat "$out" >> "$GITHUB_OUTPUT"
-          echo "attempts-used=$attempt" >> "$GITHUB_OUTPUT"
+          {
+            cat "$out"
+            echo "attempts-used=$attempt"
+          } >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 3 ]; then
             echo "::warning title=Catalogue sync::Catalogue data unavailable after $attempts attempts; nothing was changed. The next scheduled run tries again."
           elif [ "$status" -ne 0 ]; then

@@ -146,9 +146,11 @@ jobs:
           # Only the final attempt's annotations, summary and outputs are reported.
           cat "$log"
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          cat "$out" >> "$GITHUB_OUTPUT"
-          echo "attempts-used=$attempt" >> "$GITHUB_OUTPUT"
-          echo "exit-code=$status" >> "$GITHUB_OUTPUT"
+          {
+            cat "$out"
+            echo "attempts-used=$attempt"
+            echo "exit-code=$status"
+          } >> "$GITHUB_OUTPUT"
           if ! grep -q '^result=' "$GITHUB_OUTPUT"; then
             echo "::error title=Profile consistency::The checker did not produce a result (exit code $status)"
             echo "result=error" >> "$GITHUB_OUTPUT"
