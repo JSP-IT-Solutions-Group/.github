@@ -1,0 +1,58 @@
+# Example caller for a personal profile repository whose default branch
+# requires status checks (used in jahau/jahau as
+# .github/workflows/profile-projects-sync.yml).
+#
+# Every Monday, and on demand, it opens or updates a pull request that syncs
+# the published open-source projects table in README.md with the account's
+# public GitHub repositories. Pull requests opened with GITHUB_TOKEN do not
+# start other workflows, so the second job starts the required check workflow
+# on the sync branch (workflow_dispatch is allowed for GITHUB_TOKEN). Nothing
+# is merged automatically.
+#
+# Requires: Settings → Actions → General → Workflow permissions →
+# "Allow GitHub Actions to create and approve pull requests", and
+# workflow_dispatch in the required check workflow.
+
+name: Profile projects sync
+
+on:
+  schedule:
+    - cron: "10 6 * * 1" # Mondays 06:10 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-projects-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    permissions:
+      contents: write
+      pull-requests: write
+    # Pin `uses:` and `tooling-ref` to the same tag or commit SHA.
+    uses: JSP-IT-Solutions-Group/.github/.github/workflows/profile-consistency-sync.yml@profile-consistency-v1
+    with:
+      profile-path: README.md
+      catalogue: false
+      projects-owner: example-user
+      projects-format: table
+      branch: automation/profile-projects-sync
+      tooling-ref: profile-consistency-v1
+
+  start-required-checks:
+    name: Start required checks on the sync pull request
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Run the README check on the sync branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ needs.sync.outputs.branch }}
+        run: gh workflow run readme-check.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"

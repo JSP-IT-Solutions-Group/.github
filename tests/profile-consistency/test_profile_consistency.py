@@ -385,6 +385,10 @@ class WorkflowPolicy(unittest.TestCase):
                 writes = set(re.findall(r"(?m)^\s+([a-z-]+):\s*write\s*$", text))
                 # Only the sync workflow (and callers of it) may write, and only to open pull requests.
                 allowed = {"contents", "pull-requests"} if "sync" in path.name else set()
+                # Example callers may also start required check workflows on the sync branch;
+                # the shared reusable workflow itself never gets actions: write.
+                if "sync" in path.name and path.parent.name == "examples":
+                    allowed |= {"actions"}
                 self.assertLessEqual(writes, allowed, f"unexpected write permissions: {writes - allowed}")
                 if writes:
                     self.assertNotRegex(text, r"git push[^\n]*(main|master|default_branch)")

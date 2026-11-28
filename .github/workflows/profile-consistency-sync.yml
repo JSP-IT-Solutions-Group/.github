@@ -1,8 +1,10 @@
-# Reusable workflow: keep a profile README's JSP-Product counts and generated
-# solution list in sync with the English catalogue by opening (or updating) a
-# pull request. It never pushes to the default branch and never merges; a
-# person reviews every change. If the catalogue data is unavailable, nothing
-# happens.
+# Reusable workflow: keep a profile README in sync by opening (or updating) a
+# pull request with
+#   - the JSP-Product counts and generated solution list (English catalogue), and/or
+#   - the generated list of published open-source projects (public GitHub
+#     repositories of an account).
+# It never pushes to the default branch and never merges; a person reviews
+# every change. If the data is unavailable, nothing happens.
 #
 # The calling job must grant `contents: write` and `pull-requests: write`, and
 # the repository must allow GitHub Actions to create pull requests
@@ -10,7 +12,7 @@
 #
 # Documentation: docs/profile-consistency.md
 
-name: Profile catalogue sync
+name: Profile sync
 
 on:
   workflow_call:
@@ -19,16 +21,32 @@ on:
         description: README to update, relative to the caller repository root.
         type: string
         default: README.md
+      catalogue:
+        description: Sync the JSP-Product counts and solution list.
+        type: boolean
+        default: true
       catalogue-url:
         description: English catalogue source(s), tried in order and separated by "|" (/catalogue.json first, the overview page as a fallback).
         type: string
         default: https://jsp-it.com/catalogue.json|https://jsp-it.com/products_jsp_overview
+      projects-owner:
+        description: GitHub account whose public, released, licensed repositories are listed between the github-projects markers. Empty skips the projects sync.
+        type: string
+        default: ""
+      projects-format:
+        description: "Project list format: list or table."
+        type: string
+        default: list
+      projects-exclude:
+        description: Comma-separated repository names to leave out of the project list.
+        type: string
+        default: ""
       branch:
         description: Branch the sync commits to; one pull request is kept open from it.
         type: string
         default: automation/jsp-catalogue-sync
       attempts:
-        description: How many times to try when the catalogue data is unavailable (for example the site's bot protection).
+        description: How many times to try when the data is unavailable (for example the site's bot protection).
         type: number
         default: 4
       retry-delay-seconds:
@@ -48,27 +66,31 @@ on:
         description: true when the profile needed changes.
         value: ${{ jobs.sync.outputs.changed }}
       unavailable:
-        description: true when the catalogue data could not be read.
+        description: true when catalogue or GitHub data could not be read.
         value: ${{ jobs.sync.outputs.unavailable }}
       pull-request:
         description: URL of the opened or updated pull request.
         value: ${{ jobs.sync.outputs.pull-request }}
+      branch:
+        description: Branch of the sync pull request (for starting required checks on it).
+        value: ${{ jobs.sync.outputs.branch }}
 
 permissions:
   contents: read
 
 jobs:
   sync:
-    name: Sync profile with catalogue
+    name: Sync profile
     runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: write
     outputs:
-      changed: ${{ steps.sync.outputs.changed }}
-      unavailable: ${{ steps.sync.outputs.unavailable }}
+      changed: ${{ steps.combine.outputs.changed }}
+      unavailable: ${{ steps.combine.outputs.unavailable }}
       pull-request: ${{ steps.pr.outputs.url }}
+      branch: ${{ inputs.branch }}
     steps:
       - name: Check out the repository with the profile
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,6 +109,7 @@ jobs:
 
       - name: Update the profile from the catalogue
         id: sync
+        if: inputs.catalogue
         shell: bash
         working-directory: project
         env:
@@ -105,7 +128,7 @@ jobs:
             status=0
             # Nothing is written to the README when the data is unavailable (exit 3).
             python3 "$SYNC_TOOL" --profile "$PROFILE_PATH" --catalogue "$CATALOGUE_URL" --write \
-              --pr-body "$RUNNER_TEMP/pr-body.md" \
+              --pr-body "$RUNNER_TEMP/pr-body-catalogue.md" \
               --summary-file "$summary" --github-output "$out" || status=$?
             echo "Attempt $attempt/$attempts: sync exit code $status (0 done, 2 profile error, 3 catalogue unavailable)"
             if [ "$status" -ne 3 ] || [ "$attempt" -eq "$attempts" ]; then break; fi
@@ -123,9 +146,98 @@ jobs:
             exit "$status"
           fi
 
+      - name: Update the published open-source projects
+        id: projects
+        if: inputs.projects-owner != ''
+        shell: bash
+        working-directory: project
+        env:
+          PROJECTS_TOOL: ${{ github.workspace }}/.profile-consistency-tooling/profile-consistency/sync_projects.py
+          PROFILE_PATH: ${{ inputs.profile-path }}
+          PROJECTS_OWNER: ${{ inputs.projects-owner }}
+          PROJECTS_FORMAT: ${{ inputs.projects-format }}
+          PROJECTS_EXCLUDE: ${{ inputs.projects-exclude }}
+          SYNC_ATTEMPTS: ${{ inputs.attempts }}
+          SYNC_RETRY_DELAY: ${{ inputs.retry-delay-seconds }}
+          # Read-only use of the GitHub API (public repositories and releases).
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/projects-output.txt"
+          summary="$RUNNER_TEMP/projects-summary.md"
+          attempts=$(( SYNC_ATTEMPTS < 1 ? 1 : SYNC_ATTEMPTS ))
+          for attempt in $(seq 1 "$attempts"); do
+            : > "$out"; : > "$summary"
+            status=0
+            python3 "$PROJECTS_TOOL" --profile "$PROFILE_PATH" --owner "$PROJECTS_OWNER" \
+              --format "$PROJECTS_FORMAT" --exclude "$PROJECTS_EXCLUDE" --write \
+              --pr-body "$RUNNER_TEMP/pr-body-projects.md" \
+              --summary-file "$summary" --github-output "$out" || status=$?
+            echo "Attempt $attempt/$attempts: projects sync exit code $status (0 done, 2 profile error, 3 GitHub unavailable)"
+            if [ "$status" -ne 3 ] || [ "$attempt" -eq "$attempts" ]; then break; fi
+            echo "GitHub data unavailable; retrying in ${SYNC_RETRY_DELAY}s."
+            sleep "$SYNC_RETRY_DELAY"
+          done
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat "$out"
+            echo "attempts-used=$attempt"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 3 ]; then
+            echo "::warning title=Projects sync::GitHub data unavailable after $attempts attempts; the project list was not changed."
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Combine the results
+        id: combine
+        shell: bash
+        env:
+          CATALOGUE_CHANGED: ${{ steps.sync.outputs.changed }}
+          CATALOGUE_UNAVAILABLE: ${{ steps.sync.outputs.unavailable }}
+          PROJECTS_CHANGED: ${{ steps.projects.outputs.changed }}
+          PROJECTS_UNAVAILABLE: ${{ steps.projects.outputs.unavailable }}
+          SOLUTION_COUNT: ${{ steps.sync.outputs.solutions }}
+          # Not "GROUPS": that is a bash built-in array (the user's group ids).
+          GROUP_COUNT: ${{ steps.sync.outputs.groups }}
+          PROJECT_COUNT: ${{ steps.projects.outputs.projects }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/pr-body.md"
+          : > "$body"
+          changed=false
+          if [ "${CATALOGUE_CHANGED:-false}" = true ]; then
+            changed=true
+            cat "$RUNNER_TEMP/pr-body-catalogue.md" >> "$body"
+            echo >> "$body"
+          fi
+          if [ "${PROJECTS_CHANGED:-false}" = true ]; then
+            changed=true
+            cat "$RUNNER_TEMP/pr-body-projects.md" >> "$body"
+            echo >> "$body"
+          fi
+          if [ "${CATALOGUE_CHANGED:-false}" = true ] && [ "${PROJECTS_CHANGED:-false}" = true ]; then
+            title="Sync profile: JSP-Product catalogue and open-source projects"
+          elif [ "${CATALOGUE_CHANGED:-false}" = true ]; then
+            title="Sync JSP-Product catalogue: ${SOLUTION_COUNT} solutions in ${GROUP_COUNT} groups"
+          else
+            title="Sync published open-source projects: ${PROJECT_COUNT} projects"
+          fi
+          echo "---" >> "$body"
+          echo "Opened by the weekly profile sync. It is never merged automatically; please review before merging." >> "$body"
+          unavailable=false
+          if [ "${CATALOGUE_UNAVAILABLE:-false}" = true ] || [ "${PROJECTS_UNAVAILABLE:-false}" = true ]; then
+            unavailable=true
+          fi
+          {
+            echo "changed=$changed"
+            echo "unavailable=$unavailable"
+            echo "title=$title"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Open or update the pull request
         id: pr
-        if: steps.sync.outputs.changed == 'true'
+        if: steps.combine.outputs.changed == 'true'
         shell: bash
         working-directory: project
         env:
@@ -133,31 +245,28 @@ jobs:
           BRANCH: ${{ inputs.branch }}
           BASE: ${{ github.event.repository.default_branch }}
           PROFILE_PATH: ${{ inputs.profile-path }}
-          SOLUTION_COUNT: ${{ steps.sync.outputs.solutions }}
-          # Not "GROUPS": that is a bash built-in array (the user's group ids).
-          GROUP_COUNT: ${{ steps.sync.outputs.groups }}
+          TITLE: ${{ steps.combine.outputs.title }}
         run: |
           set -euo pipefail
-          title="Sync JSP-Product catalogue: ${SOLUTION_COUNT} solutions in ${GROUP_COUNT} groups"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
           git add -- "$PROFILE_PATH"
-          git commit -m "$title" -m "Automated update from the English JSP-Product catalogue."
+          git commit -m "$TITLE" -m "Automated update by the weekly profile sync."
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
           existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
           if [ -n "$existing" ]; then
-            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md"
             url="$existing"
           else
             url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$BRANCH" \
-              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md")"
+              --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")"
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Pull request: $url" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Close a pull request that is no longer needed
-        if: steps.sync.outputs.changed == 'false' && steps.sync.outputs.unavailable == 'false'
+        if: steps.combine.outputs.changed == 'false' && steps.combine.outputs.unavailable == 'false'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,5 +276,5 @@ jobs:
           existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
           if [ -n "$existing" ]; then
             gh pr close "$existing" --repo "$GITHUB_REPOSITORY" --delete-branch \
-              --comment "The profile already matches the catalogue, so this sync is no longer needed."
+              --comment "The profile already matches its sources, so this sync is no longer needed."
           fi

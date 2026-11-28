@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-28
+
+### Added
+
+- `sync_projects.py`: generates the list of published open-source projects
+  between `github-projects` markers from an account's public GitHub
+  repositories that are not forks, archived or templates and have a licence
+  and a published release. Names come from the repository name and
+  descriptions from the About text; sorted by name; `list` and `table`
+  formats. Private repositories are filtered out twice and never queried for
+  releases.
+- Sync workflow inputs `projects-owner`, `projects-format`,
+  `projects-exclude` and `catalogue` (to sync only projects), and a `branch`
+  output so callers can start required checks on the sync pull request.
+- Example caller that starts a required check workflow on the sync branch.
+
+### Changed
+
+- The sync workflow combines catalogue and project changes into one pull
+  request and is named "Profile sync". Callers keep the same permissions.
+
 ## [1.3.0] - 2026-11-28
 
 ### Added
@@ -62,7 +83,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   discrepancy.
 - Reusable workflow, weekly scheduled check, synthetic fixtures and tests.
 
-[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.3.0...main
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.4.0...main
+[1.4.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.3.0...profile-consistency-v1.4.0
 [1.3.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.2.0...profile-consistency-v1.3.0
 [1.2.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.1.0...profile-consistency-v1.2.0
 [1.1.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...profile-consistency-v1.1.0
