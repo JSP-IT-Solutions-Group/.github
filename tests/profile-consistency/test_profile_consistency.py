@@ -368,7 +368,13 @@ class WorkflowPolicy(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             with self.subTest(file=path.name):
                 self.assertRegex(text, r"(?m)^permissions:\s*\n\s+contents:\s*read\s*$")
-                self.assertNotRegex(text, r"(?m)^\s+[a-z-]+:\s*write\s*$")
+                writes = set(re.findall(r"(?m)^\s+([a-z-]+):\s*write\s*$", text))
+                # Only the sync workflow (and callers of it) may write, and only to open pull requests.
+                allowed = {"contents", "pull-requests"} if "sync" in path.name else set()
+                self.assertLessEqual(writes, allowed, f"unexpected write permissions: {writes - allowed}")
+                if writes:
+                    self.assertNotRegex(text, r"git push[^\n]*(main|master|default_branch)")
+                    self.assertNotRegex(text, r"gh pr merge")
                 self.assertNotRegex(text, r"\$\{\{\s*secrets\.")
                 self.assertNotIn("pull_request_target", text)
                 for match in re.finditer(r"(?m)^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(#.*)?$", text):

@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-28
+
+### Added
+
+- `sync_profile.py`: updates the counts in a profile README and writes a
+  generated list of all solutions, grouped by solution group, with direct links
+  to the English product pages, between `jsp-catalogue` markers.
+- Reusable workflow `profile-consistency-sync.yml`: opens or updates one pull
+  request with the sync result, and closes it when it is no longer needed.
+  Never pushes to the default branch and never merges.
+- Consistency check: new "Profile list" check that the generated list matches
+  the catalogue. Counts and links inside the generated list are not checked
+  separately.
+
 ## [1.0.0] - 2026-11-27
 
 ### Added
@@ -16,5 +30,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   discrepancy.
 - Reusable workflow, weekly scheduled check, synthetic fixtures and tests.
 
-[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...main
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.1.0...main
+[1.1.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...profile-consistency-v1.1.0
 [1.0.0]: https://github.com/JSP-IT-Solutions-Group/.github/tree/profile-consistency-v1.0.0

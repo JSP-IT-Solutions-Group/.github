@@ -36,12 +36,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 _SEVERITY = {SKIP: 0, PASS: 1, WARN: 2, FAIL: 3}
 _LABEL = {PASS: "\u2705 PASS", WARN: "\u26a0\ufe0f WARN", FAIL: "\u274c FAIL", SKIP: "\u23ed\ufe0f SKIP"}
-CATEGORIES = ("Catalogue", "Language parity", "Profile counts", "Profile links")
+CATEGORIES = ("Catalogue", "Language parity", "Profile counts", "Profile list", "Profile links")
+# Generated solution list written by sync_profile.py (excluded from count and link checks).
+MARK_START = "<!-- jsp-catalogue:start -->"
+MARK_END = "<!-- jsp-catalogue:end -->"
 
 DEFAULT_CATALOGUES = {
     "en": "https://jsp-it.com/products_jsp_overview",
@@ -373,6 +376,36 @@ def extract_links(markdown: str) -> list[str]:
     return links
 
 
+def split_generated_list(text: str) -> tuple[str, str | None]:
+    """Return (profile text without the generated list, the generated list or None)."""
+    start, end = text.find(MARK_START), text.find(MARK_END)
+    if start == -1 or end == -1 or end < start:
+        return text, None
+    return text[:start] + text[end + len(MARK_END):], text[start:end + len(MARK_END)]
+
+
+def check_profile_list(name: str, block: str | None, reference: Catalogue | None, report: Report) -> None:
+    if block is None:
+        return
+    listed = set(re.findall(r"\btype=(products_[a-z0-9_]+)", block))
+    if reference is None or reference.error or not reference.product_ids:
+        report.add("Profile list", name, WARN, f"Cannot compare the generated list ({len(listed)} solutions): "
+                   "catalogue data unavailable")
+        return
+    missing = sorted(reference.product_ids - listed)
+    extra = sorted(listed - reference.product_ids)
+    if missing or extra:
+        details = ([f"missing: {', '.join(f'`{m}`' for m in missing[:30])}"] if missing else [])
+        if extra:
+            details.append(f"no longer in the catalogue: {', '.join(f'`{e}`' for e in extra[:30])}")
+        details.append("The weekly catalogue sync opens a pull request with the update.")
+        report.add("Profile list", name, FAIL,
+                   f"Generated list has {len(listed)} solutions; the catalogue has {len(reference.product_ids)}",
+                   details)
+    else:
+        report.add("Profile list", name, PASS, f"Lists all {len(listed)} catalogue solutions")
+
+
 def check_profile_counts(name: str, text: str, require: bool, reference: Catalogue | None,
                          report: Report) -> None:
     solutions = find_counts(text, PROFILE_SOLUTION_PATTERNS)
@@ -564,11 +597,13 @@ def run(args: argparse.Namespace, fetch: Callable[..., Fetched] = http_get) -> R
                 report.unavailable = True
             report.add("Profile counts", name, status, f"Profile could not be loaded: {loaded.error}")
             continue
-        check_profile_counts(name, loaded.body, require, reference, report)
+        body, generated = split_generated_list(loaded.body)
+        check_profile_counts(name, body, require, reference, report)
+        check_profile_list(name, generated, reference, report)
         if args.no_links:
             report.add("Profile links", name, SKIP, "Link checks disabled")
         else:
-            check_profile_links(name, source, loaded.body, report, head, link_cache)
+            check_profile_links(name, source, body, report, head, link_cache)
     return report
 
 

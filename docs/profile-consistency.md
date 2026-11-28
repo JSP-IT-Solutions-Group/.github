@@ -5,11 +5,17 @@ Finnish and English JSP-Product™ catalogues. It reports problems in the job
 summary and as annotations. It **never edits** a profile or the website, uses
 no secrets and needs only `contents: read`.
 
+A separate, opt-in [weekly catalogue sync](#weekly-catalogue-sync) proposes
+the fixes as a **pull request**: it updates the counts and a generated list of
+all solutions with links to their English product pages. A person reviews and
+merges it; nothing is pushed to the default branch or merged automatically.
+
 | Check | What is compared | Outcome when it differs |
 |---|---|---|
 | Catalogue | Solutions and solution groups in each language, from the page's structured data, cross-checked against the product cards and the visible counter | WARN (the page disagrees with itself) |
 | Language parity | English vs Finnish: counts, product ids and group keys | FAIL |
-| Profile counts | "N software solutions" / "N solution groups" (or the Finnish "N ratkaisua" / "N ratkaisuryhmässä") in profile READMEs vs the reference (English) catalogue | FAIL |
+| Profile counts | "N software solutions" / "N solution groups" (or the Finnish "N ratkaisua" / "N ratkaisuryhmässä") in profile READMEs vs the reference (English) catalogue. Text inside the generated solution list is ignored. | FAIL |
+| Profile list | When the profile has a generated solution list (between `jsp-catalogue` markers): it lists exactly the catalogue's products | FAIL |
 | Profile links | Every link in the profile README: http(s), images, HTML links, reference links, relative files | FAIL for 404/410 or missing files, WARN when it can't be verified (403, 429, 5xx, timeouts) |
 
 Profiles currently checked by the weekly run in this repository:
@@ -57,7 +63,7 @@ discrepancies against it still fail. Fetches retry transient errors (5xx,
 
 1. Open the job summary. It shows the catalogue counts, the profile sentence that disagrees, and the broken links.
 2. Confirm on the live pages (<https://jsp-it.com/products_jsp_overview>, <https://jsp-it.fi/products_jsp_overview>).
-3. Update the profile README **by hand** in a reviewed pull request. The check never edits profiles.
+3. Merge the pull request from the [weekly catalogue sync](#weekly-catalogue-sync) if one is open, or update the profile README by hand in a reviewed pull request. The check itself never edits profiles.
 4. A parity failure (English and Finnish differ) needs a website fix, not a profile change. Report it to the website maintainers.
 
 **When data is unavailable:** re-run the workflow later. If the site is up
@@ -117,6 +123,56 @@ python3 profile-consistency/check_profile_consistency.py \
   --profile profile/README.md \
   --counts-profile https://raw.githubusercontent.com/JSP-IT/JSP-IT/main/README.md
 python3 -m unittest discover -s tests/profile-consistency -v   # synthetic fixtures, no external network
+```
+
+## Weekly catalogue sync
+
+`profile-consistency/sync_profile.py` and the reusable workflow
+`.github/workflows/profile-consistency-sync.yml` keep a profile README in
+step with the **English** catalogue:
+
+- the counts in sentences such as "102 software solutions across 15 solution groups";
+- a generated list of all solutions between `<!-- jsp-catalogue:start -->` and `<!-- jsp-catalogue:end -->`. It has one collapsible `<details>` block per solution group (so the profile stays short on mobile), each solution links to its English page (`https://jsp-it.com/products_show?type=…`) with its one-line summary, and each group links to its filtered catalogue view.
+
+On the first run, when the markers do not exist yet, the list is inserted
+under a "📋 All JSP-Product™ solutions" heading after the line linking to the
+complete catalogue. Later runs only replace the content between the markers.
+Do not edit inside the markers; changes there are overwritten.
+
+**How a run behaves:**
+
+| Situation | Result |
+|---|---|
+| Profile already matches | Nothing changes. An open sync pull request is closed with a comment. |
+| Catalogue changed | One pull request from the `automation/jsp-catalogue-sync` branch is opened, or the open one is updated, listing added and removed solutions and count changes. |
+| Catalogue data unavailable (bot protection, outage, markup change) | Nothing changes and a warning is shown. The next run retries. |
+| Markers broken or no place to insert the list | The job fails without changing anything. |
+
+Pull requests are created with the workflow's `GITHUB_TOKEN`, so they are
+authored by `github-actions[bot]`. GitHub does not start other workflows for
+them, so the consistency check runs on the next schedule or a manual run
+instead. The calling job needs `contents: write` and `pull-requests: write`,
+and the repository must allow GitHub Actions to create pull requests
+(*Settings → Actions → General → Workflow permissions*). The branch protection
+of the default branch is unaffected: changes still go through a reviewed pull
+request.
+
+Caller example: [`profile-consistency/examples/jsp-it-catalogue-sync.yml`](../profile-consistency/examples/jsp-it-catalogue-sync.yml)
+(Mondays 06:05 UTC and on demand, before the 06:23 consistency check).
+
+| Input | Default | Description |
+|---|---|---|
+| `profile-path` | `README.md` | README to update. |
+| `catalogue-url` | `https://jsp-it.com/products_jsp_overview` | English catalogue, also the base for the links. |
+| `branch` | `automation/jsp-catalogue-sync` | Branch for the sync commit; one pull request is kept open from it. |
+| `tooling-ref` | `profile-consistency-v1` | Ref of this repository to load the scripts from. |
+| `runs-on` | `ubuntu-24.04` | Runner with bash, git, gh and Python 3.11+. |
+
+Locally (dry run unless `--write`):
+
+```sh
+python3 profile-consistency/sync_profile.py --profile README.md
+python3 profile-consistency/sync_profile.py --profile README.md --write
 ```
 
 ## Commercial offerings vs open-source projects

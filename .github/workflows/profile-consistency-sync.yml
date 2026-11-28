@@ -1,0 +1,145 @@
+# Reusable workflow: keep a profile README's JSP-Product counts and generated
+# solution list in sync with the English catalogue by opening (or updating) a
+# pull request. It never pushes to the default branch and never merges; a
+# person reviews every change. If the catalogue data is unavailable, nothing
+# happens.
+#
+# The calling job must grant `contents: write` and `pull-requests: write`, and
+# the repository must allow GitHub Actions to create pull requests
+# (Settings → Actions → General → Workflow permissions).
+#
+# Documentation: docs/profile-consistency.md
+
+name: Profile catalogue sync
+
+on:
+  workflow_call:
+    inputs:
+      profile-path:
+        description: README to update, relative to the caller repository root.
+        type: string
+        default: README.md
+      catalogue-url:
+        description: English catalogue page (also the base for the generated links).
+        type: string
+        default: https://jsp-it.com/products_jsp_overview
+      branch:
+        description: Branch the sync commits to; one pull request is kept open from it.
+        type: string
+        default: automation/jsp-catalogue-sync
+      tooling-ref:
+        description: Ref of JSP-IT-Solutions-Group/.github to load the scripts from. Use the same ref as in `uses:`.
+        type: string
+        default: profile-consistency-v1
+      runs-on:
+        description: Runner label (needs bash, git, gh and Python 3.11+).
+        type: string
+        default: ubuntu-24.04
+    outputs:
+      changed:
+        description: true when the profile needed changes.
+        value: ${{ jobs.sync.outputs.changed }}
+      unavailable:
+        description: true when the catalogue data could not be read.
+        value: ${{ jobs.sync.outputs.unavailable }}
+      pull-request:
+        description: URL of the opened or updated pull request.
+        value: ${{ jobs.sync.outputs.pull-request }}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync profile with catalogue
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      unavailable: ${{ steps.sync.outputs.unavailable }}
+      pull-request: ${{ steps.pr.outputs.url }}
+    steps:
+      - name: Check out the repository with the profile
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: project
+          persist-credentials: false
+
+      - name: Check out the scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JSP-IT-Solutions-Group/.github
+          ref: ${{ inputs.tooling-ref }}
+          path: .profile-consistency-tooling
+          persist-credentials: false
+          sparse-checkout: profile-consistency
+
+      - name: Update the profile from the catalogue
+        id: sync
+        shell: bash
+        working-directory: project
+        env:
+          SYNC_TOOL: ${{ github.workspace }}/.profile-consistency-tooling/profile-consistency/sync_profile.py
+          PROFILE_PATH: ${{ inputs.profile-path }}
+          CATALOGUE_URL: ${{ inputs.catalogue-url }}
+        run: |
+          set -uo pipefail
+          status=0
+          python3 "$SYNC_TOOL" --profile "$PROFILE_PATH" --catalogue "$CATALOGUE_URL" --write \
+            --pr-body "$RUNNER_TEMP/pr-body.md" \
+            --summary-file "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT" || status=$?
+          echo "Sync exit code: $status (0 done, 2 profile error, 3 catalogue unavailable)"
+          if [ "$status" -eq 3 ]; then
+            echo "::warning title=Catalogue sync::Catalogue data unavailable; nothing was changed. The next run retries."
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Open or update the pull request
+        id: pr
+        if: steps.sync.outputs.changed == 'true'
+        shell: bash
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+          BASE: ${{ github.event.repository.default_branch }}
+          PROFILE_PATH: ${{ inputs.profile-path }}
+          SOLUTIONS: ${{ steps.sync.outputs.solutions }}
+          GROUPS: ${{ steps.sync.outputs.groups }}
+        run: |
+          set -euo pipefail
+          title="Sync JSP-Product catalogue: ${SOLUTIONS} solutions in ${GROUPS} groups"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add -- "$PROFILE_PATH"
+          git commit -m "$title" -m "Automated update from the English JSP-Product catalogue."
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+            url="$existing"
+          else
+            url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$BRANCH" \
+              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md")"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Close a pull request that is no longer needed
+        if: steps.sync.outputs.changed == 'false' && steps.sync.outputs.unavailable == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing" ]; then
+            gh pr close "$existing" --repo "$GITHUB_REPOSITORY" --delete-branch \
+              --comment "The profile already matches the catalogue, so this sync is no longer needed."
+          fi
