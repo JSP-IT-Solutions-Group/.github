@@ -206,6 +206,55 @@ python3 profile-consistency/sync_profile.py --profile README.md
 python3 profile-consistency/sync_profile.py --profile README.md --write
 ```
 
+## Weekly published-projects sync
+
+`profile-consistency/sync_projects.py` keeps the list of **published
+open-source projects** in a profile README in step with the account's public
+GitHub repositories. It runs in the same sync workflow and its changes go into
+the same pull request as the catalogue sync (set `catalogue: false` to sync
+only projects).
+
+**Which repositories are listed:** public (checked by both `private` and
+`visibility`), not a fork, not archived, not a template, with a licence that
+GitHub recognises and at least one published release. The profile repository
+(named like the account) and `.github` are never listed; `projects-exclude`
+leaves out more. Private repositories are never listed and never queried for
+releases.
+
+**Content:** the name comes from the repository name (`sbom-release-diff` →
+"SBOM Release Diff"), the description from the repository's **About** text
+(edit it on GitHub to change the profile text), and language and licence from
+GitHub. Projects are sorted by name.
+
+| `projects-format` | Output (between `<!-- github-projects:start -->` / `<!-- github-projects:end -->`) |
+|---|---|
+| `list` | `- **[Name](url)** — Description.<br>` + `Language · Licence · latest-release badge` |
+| `table` | `\| Project \| Description \| Language \| Release \| Stars \|` with release and stars badges |
+
+The markers must be added once by hand around the existing list or table; the
+sync refuses to run without them (exit 2) instead of guessing where the list is.
+
+| Input | Default | Description |
+|---|---|---|
+| `catalogue` | `true` | Also sync the JSP-Product counts and solution list. |
+| `projects-owner` | — | GitHub account to list projects from. Empty skips the projects sync. |
+| `projects-format` | `list` | `list` or `table`. |
+| `projects-exclude` | — | Comma-separated repository names to leave out. |
+
+**Repositories with required status checks:** pull requests opened with
+`GITHUB_TOKEN` do not start other workflows, so a required check would never
+run on the sync pull request. The workflow outputs `branch`; the caller adds a
+small job that runs `gh workflow run <check>.yml --ref <branch>` with
+`actions: write` (`workflow_dispatch` is allowed for `GITHUB_TOKEN`). See
+[`examples/projects-sync-with-required-checks.yml`](../profile-consistency/examples/projects-sync-with-required-checks.yml).
+The shared workflow itself never gets `actions: write`.
+
+Locally (dry run unless `--write`; set `GH_TOKEN` to avoid API rate limits):
+
+```sh
+python3 profile-consistency/sync_projects.py --profile README.md --owner JSP-IT --format list
+```
+
 ## Commercial offerings vs open-source projects
 
 The catalogue lists **commercial JSP-Product™ solutions**. Many of them are
