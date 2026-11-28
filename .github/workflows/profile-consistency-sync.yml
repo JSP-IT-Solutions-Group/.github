@@ -20,9 +20,9 @@ on:
         type: string
         default: README.md
       catalogue-url:
-        description: English catalogue page (also the base for the generated links).
+        description: English catalogue source(s), tried in order and separated by "|" (/catalogue.json first, the overview page as a fallback).
         type: string
-        default: https://jsp-it.com/products_jsp_overview
+        default: https://jsp-it.com/catalogue.json|https://jsp-it.com/products_jsp_overview
       branch:
         description: Branch the sync commits to; one pull request is kept open from it.
         type: string

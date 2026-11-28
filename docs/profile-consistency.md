@@ -26,8 +26,32 @@ Profiles currently checked by the weekly run in this repository:
 ## Data source
 
 The authoritative product data lives in the website's source code, which is
-not in these repositories. The check therefore reads the **published**
-catalogue pages and prefers their structured data over visible text:
+not in these repositories. The tools read what the website **publishes**,
+in this order:
+
+1. **`/catalogue.json`** (primary): a machine-readable view of the catalogue
+   that the site generates on every request from the same product catalogue as
+   the overview page: `https://jsp-it.com/catalogue.json` (English) and
+   `https://jsp-it.fi/catalogue.json` (Finnish). Schema version 1:
+
+   ```json
+   {
+     "version": 1, "language": "en", "count": 102,
+     "categories": [{ "key": "automation", "label": "Automation and AI" }],
+     "products": [{ "id": "products_ai", "name": "JSP-AI™",
+                    "summary": "AI assistants and intelligent information processing",
+                    "category": "automation",
+                    "url": "https://jsp-it.com/products_show?type=products_ai" }]
+   }
+   ```
+
+   The tools require `version` 1, `categories[].key` and `products[].id`, and
+   ignore unknown fields. A mismatch between `count` and the number of products,
+   a product in an undefined group, duplicate ids or the wrong `language` is a
+   warning in the check; the sync refuses inconsistent data and falls back.
+2. **The HTML overview page** (fallback), used when the JSON request fails, is
+   not JSON or has another schema version. The page's structured data is read
+   in this order:
 
 | Signal | Used for |
 |---|---|
@@ -36,14 +60,17 @@ catalogue pages and prefers their structured data over visible text:
 | `data-product-category` attributes on product cards | Cross-check, and fallback (with a warning) when the JSON is missing or invalid |
 | Visible counter ("102 solutions" / "102 ratkaisua") | Cross-check only |
 
-Both JSON blocks are generated server-side from the same product catalogue
-that renders the page. That makes them the most direct public view of the
-source data and much less fragile than scraping headings or prose.
+Using a fallback source is reported as a warning that names the reason, for
+example the bot-protection page.
+
+Sources are configured as `|`-separated lists, for example
+`--catalogue "en=https://jsp-it.com/catalogue.json|https://jsp-it.com/products_jsp_overview"`.
 
 **Freshness.** Requests send `Cache-Control: no-cache` and `Pragma: no-cache`.
 If a response still carries cache indicators (`Age` > 0, `X-Cache: HIT`,
 `CF-Cache-Status: HIT`), the summary says so next to the counts. At the time
-of writing, the catalogue pages return `Cache-Control: no-store`.
+of writing, the overview pages return `Cache-Control: no-store` and `/catalogue.json` returns
+`Cache-Control: public, max-age=3600`, so a catalogue change can take up to an hour to appear in the JSON.
 
 ## Outcomes and failure handling
 
@@ -105,8 +132,8 @@ tag exists, use a commit SHA from `main`.
 |---|---|---|
 | `profiles` | — | Comma-separated READMEs (caller-repo paths or https URLs). Counts are compared only when the profile states them. |
 | `counts-profiles` | — | Comma-separated READMEs that **must** state the counts. |
-| `catalogue-en-url` | `https://jsp-it.com/products_jsp_overview` | English catalogue. |
-| `catalogue-fi-url` | `https://jsp-it.fi/products_jsp_overview` | Finnish catalogue. |
+| `catalogue-en-url` | `https://jsp-it.com/catalogue.json\|https://jsp-it.com/products_jsp_overview` | English catalogue source(s), tried in order. |
+| `catalogue-fi-url` | `https://jsp-it.fi/catalogue.json\|https://jsp-it.fi/products_jsp_overview` | Finnish catalogue source(s), tried in order. |
 | `check-links` | `true` | Check profile links. |
 | `fail-on-unavailable` | `false` | Fail when data can't be fetched. |
 | `enforce` | `true` | Fail on discrepancies and broken links. |
@@ -165,7 +192,7 @@ Caller example: [`profile-consistency/examples/jsp-it-catalogue-sync.yml`](../pr
 | Input | Default | Description |
 |---|---|---|
 | `profile-path` | `README.md` | README to update. |
-| `catalogue-url` | `https://jsp-it.com/products_jsp_overview` | English catalogue, also the base for the links. |
+| `catalogue-url` | `https://jsp-it.com/catalogue.json\|https://jsp-it.com/products_jsp_overview` | English catalogue source(s), tried in order. Product links come from the JSON; group links use the overview page. |
 | `branch` | `automation/jsp-catalogue-sync` | Branch for the sync commit; one pull request is kept open from it. |
 | `attempts` | `4` | Tries when the catalogue data is unavailable, for example because of the site's bot protection. |
 | `retry-delay-seconds` | `90` | Wait between attempts. |
@@ -190,6 +217,8 @@ Projects". This check counts only catalogue products. It never adds
 open-source projects to the counts, or the other way round.
 
 ## Proposed website change (not implemented)
+
+(`/catalogue.json`, proposed for the bot-protection issue, is now published; see [Data source](#data-source).)
 
 Neither catalogue page currently links to JSP-IT's own GitHub or open-source
 projects: there is no link in the page body or footer, and none in the
@@ -219,4 +248,4 @@ maintainers to consider:
 - Profiles are compared with one reference language (English by default, `--reference-language` locally).
 - Link checks see what an anonymous client sees. Some sites block automated requests (403/429). Those links are reported as "could not be verified", not as broken.
 - At most 200 links per profile are checked.
-- **Bot protection (observed 2026-11-27/28):** GitHub-hosted runners are often served an nginx interstitial titled “One moment, please...” (HTTP 200, about 12 KB, no catalogue data) instead of the catalogue; in the first manual sync runs, three out of four attempts got it. Both workflows therefore retry when the data is unavailable (`attempts`, default 4, `retry-delay-seconds`, default 90). Only the final attempt is reported. If every attempt fails, the result is “data unavailable” (exit 3), never a discrepancy, and the message shows the status, size, title and server. The proper fix is on the website side (for example letting this documented user agent `jsp-profile-consistency-check/…` through, or exposing a small JSON endpoint with the counts). The tools deliberately do not spoof a browser user agent or try to solve the challenge.
+- **Bot protection (observed 2026-11-27/28):** GitHub-hosted runners are often served an nginx interstitial titled “One moment, please...” (HTTP 200, about 12 KB, no catalogue data) instead of the overview page. The website therefore publishes `/catalogue.json`, and the hosting's bot protection should have an exception for that **path** (not for a user agent, which anyone could copy). Until then, and as a safety net, both workflows retry when the data is unavailable (`attempts`, `retry-delay-seconds`) and fall back to the overview page. If every source and attempt fails, the result is “data unavailable” (exit 3), never a discrepancy, and the message shows the status, size, title and server of each response. The tools deliberately do not spoof a browser user agent or try to solve the challenge.
