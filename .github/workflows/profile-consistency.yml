@@ -38,6 +38,14 @@ on:
         description: Fail the job on discrepancies or broken links. Set false to only report.
         type: boolean
         default: true
+      attempts:
+        description: How many times to try when the catalogue data is unavailable (for example the site's bot protection). Discrepancies are never retried.
+        type: number
+        default: 4
+      retry-delay-seconds:
+        description: Seconds to wait between attempts.
+        type: number
+        default: 90
       tooling-ref:
         description: Ref of JSP-IT-Solutions-Group/.github to load the checker from. Use the same ref as in `uses:`.
         type: string
@@ -67,7 +75,7 @@ jobs:
   check:
     name: Profile consistency
     runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
@@ -102,9 +110,14 @@ jobs:
           PC_EN: ${{ inputs.catalogue-en-url }}
           PC_FI: ${{ inputs.catalogue-fi-url }}
           PC_CHECK_LINKS: ${{ inputs.check-links }}
+          PC_ATTEMPTS: ${{ inputs.attempts }}
+          PC_RETRY_DELAY: ${{ inputs.retry-delay-seconds }}
         run: |
           set -uo pipefail
-          args=(--annotations --summary-file "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT")
+          out="$RUNNER_TEMP/pc-output.txt"
+          summary="$RUNNER_TEMP/pc-summary.md"
+          log="$RUNNER_TEMP/pc-stdout.txt"
+          args=(--annotations --summary-file "$summary" --github-output "$out")
           if [ -n "$PC_EN" ]; then args+=(--catalogue "en=$PC_EN"); fi
           if [ -n "$PC_FI" ]; then args+=(--catalogue "fi=$PC_FI"); fi
           add_list() {
@@ -120,10 +133,24 @@ jobs:
           add_list --counts-profile "$PC_COUNTS_PROFILES"
           if [ "$PC_CHECK_LINKS" != "true" ]; then args+=(--no-links); fi
 
-          status=0
-          python3 "$PC_TOOL" "${args[@]}" || status=$?
-          echo "exit-code=$status" >> "$GITHUB_OUTPUT"
-          echo "Checker exit code: $status (0 consistent, 1 discrepancy, 3 data unavailable)"
+          attempts=$(( PC_ATTEMPTS < 1 ? 1 : PC_ATTEMPTS ))
+          for attempt in $(seq 1 "$attempts"); do
+            : > "$out"; : > "$summary"
+            status=0
+            python3 "$PC_TOOL" "${args[@]}" > "$log" || status=$?
+            echo "Attempt $attempt/$attempts: checker exit code $status (0 consistent, 1 discrepancy, 3 data unavailable)"
+            if [ "$status" -ne 3 ] || [ "$attempt" -eq "$attempts" ]; then break; fi
+            echo "Catalogue data unavailable; retrying in ${PC_RETRY_DELAY}s."
+            sleep "$PC_RETRY_DELAY"
+          done
+          # Only the final attempt's annotations, summary and outputs are reported.
+          cat "$log"
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat "$out"
+            echo "attempts-used=$attempt"
+            echo "exit-code=$status"
+          } >> "$GITHUB_OUTPUT"
           if ! grep -q '^result=' "$GITHUB_OUTPUT"; then
             echo "::error title=Profile consistency::The checker did not produce a result (exit code $status)"
             echo "result=error" >> "$GITHUB_OUTPUT"

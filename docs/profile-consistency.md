@@ -110,6 +110,8 @@ tag exists, use a commit SHA from `main`.
 | `check-links` | `true` | Check profile links. |
 | `fail-on-unavailable` | `false` | Fail when data can't be fetched. |
 | `enforce` | `true` | Fail on discrepancies and broken links. |
+| `attempts` | `4` | Tries when the catalogue data is unavailable, for example because of the site's bot protection. Discrepancies are never retried. |
+| `retry-delay-seconds` | `90` | Wait between attempts. |
 | `tooling-ref` | `profile-consistency-v1` | Ref of this repository to load the checker from. |
 | `runs-on` | `ubuntu-24.04` | Runner with bash and Python 3.11+. |
 
@@ -145,7 +147,7 @@ Do not edit inside the markers; changes there are overwritten.
 |---|---|
 | Profile already matches | Nothing changes. An open sync pull request is closed with a comment. |
 | Catalogue changed | One pull request from the `automation/jsp-catalogue-sync` branch is opened, or the open one is updated, listing added and removed solutions and count changes. |
-| Catalogue data unavailable (bot protection, outage, markup change) | Nothing changes and a warning is shown. The next run retries. |
+| Catalogue data unavailable (bot protection, outage, markup change) | Retried up to `attempts` times (default 4, 90 s apart). If it is still unavailable, nothing changes, a warning is shown and the next scheduled run tries again. |
 | Markers broken or no place to insert the list | The job fails without changing anything. |
 
 Pull requests are created with the workflow's `GITHUB_TOKEN`, so they are
@@ -165,6 +167,8 @@ Caller example: [`profile-consistency/examples/jsp-it-catalogue-sync.yml`](../pr
 | `profile-path` | `README.md` | README to update. |
 | `catalogue-url` | `https://jsp-it.com/products_jsp_overview` | English catalogue, also the base for the links. |
 | `branch` | `automation/jsp-catalogue-sync` | Branch for the sync commit; one pull request is kept open from it. |
+| `attempts` | `4` | Tries when the catalogue data is unavailable, for example because of the site's bot protection. |
+| `retry-delay-seconds` | `90` | Wait between attempts. |
 | `tooling-ref` | `profile-consistency-v1` | Ref of this repository to load the scripts from. |
 | `runs-on` | `ubuntu-24.04` | Runner with bash, git, gh and Python 3.11+. |
 
@@ -215,4 +219,4 @@ maintainers to consider:
 - Profiles are compared with one reference language (English by default, `--reference-language` locally).
 - Link checks see what an anonymous client sees. Some sites block automated requests (403/429). Those links are reported as "could not be verified", not as broken.
 - At most 200 links per profile are checked.
-- **Bot protection (observed 2026-11-27):** GitHub-hosted runners are *sometimes* served an nginx interstitial titled “One moment, please...” (HTTP 200, about 12 KB, no catalogue data) instead of the catalogue; other runs get the full page. The check reports this as “data unavailable” (exit 3), never as a discrepancy, and the message shows the status, size, title and server so the cause is visible. The weekly run will therefore sometimes be inconclusive. The proper fix is on the website side (for example letting this documented user agent `jsp-profile-consistency-check/…` through, or exposing a small JSON endpoint with the counts). The check deliberately does not spoof a browser user agent or try to solve the challenge.
+- **Bot protection (observed 2026-11-27/28):** GitHub-hosted runners are often served an nginx interstitial titled “One moment, please...” (HTTP 200, about 12 KB, no catalogue data) instead of the catalogue; in the first manual sync runs, three out of four attempts got it. Both workflows therefore retry when the data is unavailable (`attempts`, default 4, `retry-delay-seconds`, default 90). Only the final attempt is reported. If every attempt fails, the result is “data unavailable” (exit 3), never a discrepancy, and the message shows the status, size, title and server. The proper fix is on the website side (for example letting this documented user agent `jsp-profile-consistency-check/…` through, or exposing a small JSON endpoint with the counts). The tools deliberately do not spoof a browser user agent or try to solve the challenge.

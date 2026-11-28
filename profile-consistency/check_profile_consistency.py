@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 _SEVERITY = {SKIP: 0, PASS: 1, WARN: 2, FAIL: 3}
