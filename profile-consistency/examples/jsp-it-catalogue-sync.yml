@@ -1,0 +1,33 @@
+# Example caller for a profile repository (used in JSP-IT/JSP-IT as
+# .github/workflows/jsp-catalogue-sync.yml). Every Monday, and on demand, it
+# opens or updates a pull request that syncs README.md with the English
+# JSP-Product catalogue: the counts and the generated solution list. A person
+# reviews and merges the pull request; nothing is merged automatically.
+#
+# Requires: Settings → Actions → General → Workflow permissions →
+# "Allow GitHub Actions to create and approve pull requests".
+
+name: JSP-Product catalogue sync
+
+on:
+  schedule:
+    - cron: "5 6 * * 1" # Mondays 06:05 UTC, before the 06:23 consistency check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jsp-catalogue-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    permissions:
+      contents: write
+      pull-requests: write
+    # Pin `uses:` and `tooling-ref` to the same tag or commit SHA.
+    uses: JSP-IT-Solutions-Group/.github/.github/workflows/profile-consistency-sync.yml@profile-consistency-v1
+    with:
+      profile-path: README.md
+      tooling-ref: profile-consistency-v1
