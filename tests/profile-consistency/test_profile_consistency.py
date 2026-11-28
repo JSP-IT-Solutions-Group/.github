@@ -351,9 +351,23 @@ class Metadata(unittest.TestCase):
         block = workflow.split("    inputs:\n", 1)[1].split("    outputs:\n", 1)[0]
         inputs = re.findall(r"(?m)^      ([a-z-]+):\n", block)
         docs = (REPO / "docs" / "profile-consistency.md").read_text(encoding="utf-8")
-        self.assertEqual(len(inputs), 9)
+        self.assertEqual(len(inputs), 11)
         for name in inputs:
             self.assertIn(f"`{name}`", docs)
+
+
+class Retries(unittest.TestCase):
+    def test_both_workflows_retry_only_unavailable_data(self) -> None:
+        docs = (REPO / "docs" / "profile-consistency.md").read_text(encoding="utf-8")
+        for name in ("profile-consistency.yml", "profile-consistency-sync.yml"):
+            text = (REPO / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            with self.subTest(workflow=name):
+                self.assertRegex(text, r"(?m)^      attempts:\n(?:.*\n){1,2}\s+type: number\n\s+default: 4$")
+                self.assertRegex(text, r"(?m)^      retry-delay-seconds:\n(?:.*\n){1,2}\s+type: number\n\s+default: 90$")
+                # The loop only continues on exit code 3 (data unavailable).
+                self.assertIn('if [ "$status" -ne 3 ] || [ "$attempt" -eq "$attempts" ]; then break; fi', text)
+        self.assertEqual(docs.count("| `attempts` | `4` |"), 2)
+        self.assertEqual(docs.count("| `retry-delay-seconds` | `90` |"), 2)
 
 
 class WorkflowPolicy(unittest.TestCase):

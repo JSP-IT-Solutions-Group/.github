@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-28
+
+### Added
+
+- Retries when the catalogue data is unavailable (for example the site's bot
+  protection page): new `attempts` (default 4) and `retry-delay-seconds`
+  (default 90) inputs in both reusable workflows. Only the final attempt is
+  reported; discrepancies and profile errors are never retried.
+
+### Changed
+
+- The consistency check job timeout is 30 minutes (was 15) to fit the retries.
+
 ## [1.1.0] - 2026-11-28
 
 ### Added
@@ -30,6 +43,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   discrepancy.
 - Reusable workflow, weekly scheduled check, synthetic fixtures and tests.
 
-[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.1.0...main
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.2.0...main
+[1.2.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.1.0...profile-consistency-v1.2.0
 [1.1.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...profile-consistency-v1.1.0
 [1.0.0]: https://github.com/JSP-IT-Solutions-Group/.github/tree/profile-consistency-v1.0.0

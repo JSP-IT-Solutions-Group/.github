@@ -27,6 +27,14 @@ on:
         description: Branch the sync commits to; one pull request is kept open from it.
         type: string
         default: automation/jsp-catalogue-sync
+      attempts:
+        description: How many times to try when the catalogue data is unavailable (for example the site's bot protection).
+        type: number
+        default: 4
+      retry-delay-seconds:
+        description: Seconds to wait between attempts.
+        type: number
+        default: 90
       tooling-ref:
         description: Ref of JSP-IT-Solutions-Group/.github to load the scripts from. Use the same ref as in `uses:`.
         type: string
@@ -85,15 +93,30 @@ jobs:
           SYNC_TOOL: ${{ github.workspace }}/.profile-consistency-tooling/profile-consistency/sync_profile.py
           PROFILE_PATH: ${{ inputs.profile-path }}
           CATALOGUE_URL: ${{ inputs.catalogue-url }}
+          SYNC_ATTEMPTS: ${{ inputs.attempts }}
+          SYNC_RETRY_DELAY: ${{ inputs.retry-delay-seconds }}
         run: |
           set -uo pipefail
-          status=0
-          python3 "$SYNC_TOOL" --profile "$PROFILE_PATH" --catalogue "$CATALOGUE_URL" --write \
-            --pr-body "$RUNNER_TEMP/pr-body.md" \
-            --summary-file "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT" || status=$?
-          echo "Sync exit code: $status (0 done, 2 profile error, 3 catalogue unavailable)"
+          out="$RUNNER_TEMP/sync-output.txt"
+          summary="$RUNNER_TEMP/sync-summary.md"
+          attempts=$(( SYNC_ATTEMPTS < 1 ? 1 : SYNC_ATTEMPTS ))
+          for attempt in $(seq 1 "$attempts"); do
+            : > "$out"; : > "$summary"
+            status=0
+            # Nothing is written to the README when the data is unavailable (exit 3).
+            python3 "$SYNC_TOOL" --profile "$PROFILE_PATH" --catalogue "$CATALOGUE_URL" --write \
+              --pr-body "$RUNNER_TEMP/pr-body.md" \
+              --summary-file "$summary" --github-output "$out" || status=$?
+            echo "Attempt $attempt/$attempts: sync exit code $status (0 done, 2 profile error, 3 catalogue unavailable)"
+            if [ "$status" -ne 3 ] || [ "$attempt" -eq "$attempts" ]; then break; fi
+            echo "Catalogue data unavailable; retrying in ${SYNC_RETRY_DELAY}s."
+            sleep "$SYNC_RETRY_DELAY"
+          done
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          cat "$out" >> "$GITHUB_OUTPUT"
+          echo "attempts-used=$attempt" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 3 ]; then
-            echo "::warning title=Catalogue sync::Catalogue data unavailable; nothing was changed. The next run retries."
+            echo "::warning title=Catalogue sync::Catalogue data unavailable after $attempts attempts; nothing was changed. The next scheduled run tries again."
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi
