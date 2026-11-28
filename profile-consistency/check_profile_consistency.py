@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 PASS, WARN, FAIL, SKIP = "pass", "warn", "fail", "skip"
 _SEVERITY = {SKIP: 0, PASS: 1, WARN: 2, FAIL: 3}
@@ -46,9 +46,16 @@ CATEGORIES = ("Catalogue", "Language parity", "Profile counts", "Profile list", 
 MARK_START = "<!-- jsp-catalogue:start -->"
 MARK_END = "<!-- jsp-catalogue:end -->"
 
-DEFAULT_CATALOGUES = {
+# Human-facing catalogue pages (also the base for generated group links).
+OVERVIEW_PAGES = {
     "en": "https://jsp-it.com/products_jsp_overview",
     "fi": "https://jsp-it.fi/products_jsp_overview",
+}
+# Sources per language, tried in order ("|"-separated): the machine-readable
+# /catalogue.json first, the HTML overview page as a fallback.
+DEFAULT_CATALOGUES = {
+    "en": "https://jsp-it.com/catalogue.json|https://jsp-it.com/products_jsp_overview",
+    "fi": "https://jsp-it.fi/catalogue.json|https://jsp-it.fi/products_jsp_overview",
 }
 USER_AGENT = f"jsp-profile-consistency-check/{__version__} (+https://github.com/JSP-IT-Solutions-Group/.github)"
 MAX_BYTES = 8 * 1024 * 1024
@@ -203,15 +210,126 @@ def visible_text(document: str) -> str:
     return re.sub(r"\s+", " ", html_lib.unescape(text))
 
 
-def extract_catalogue(language: str, fetched: Fetched) -> Catalogue:
+JSON_SCHEMA_VERSION = 1
+
+
+def describe_response(fetched: Fetched) -> str:
+    """Short description of what the server sent (for 'data unavailable' messages)."""
+    document = fetched.body or ""
+    title = re.search(r"<title[^>]*>(.*?)</title>", document, re.IGNORECASE | re.DOTALL)
+    return (f"server answered HTTP {fetched.status} with {len(document)} characters"
+            + (f", title “{html_lib.unescape(title.group(1)).strip()[:80]}”" if title else "")
+            + (f", content type {fetched.headers['content-type']}" if fetched.headers.get("content-type") else "")
+            + (f", server {fetched.headers['server']}" if fetched.headers.get("server") else ""))
+
+
+def parse_catalogue_json(body: str) -> dict[str, Any]:
+    """Validate a /catalogue.json document (schema version 1) and return it.
+
+    Raises ValueError when it cannot be used at all. Unknown fields are ignored.
+    """
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"not valid JSON ({exc.msg})") from exc
+    if not isinstance(data, dict):
+        raise ValueError("JSON document is not an object")
+    if data.get("version") != JSON_SCHEMA_VERSION:
+        raise ValueError(f"unsupported schema version {data.get('version')!r} (expected {JSON_SCHEMA_VERSION})")
+    categories, products = data.get("categories"), data.get("products")
+    if not isinstance(categories, list) or not isinstance(products, list):
+        raise ValueError("'categories' and 'products' must be lists")
+    if not all(isinstance(c, dict) and isinstance(c.get("key"), str) and c["key"] for c in categories):
+        raise ValueError("every category needs a non-empty 'key'")
+    if not all(isinstance(p, dict) and isinstance(p.get("id"), str) and p["id"] for p in products):
+        raise ValueError("every product needs a non-empty 'id'")
+    return data
+
+
+def json_problems(data: dict[str, Any], language: str | None = None) -> list[str]:
+    """Consistency problems in a valid catalogue JSON (reported as warnings)."""
+    products, keys = data["products"], [c["key"] for c in data["categories"]]
+    problems = []
+    if data.get("count") != len(products):
+        problems.append(f"count {data.get('count')!r} != {len(products)} products")
+    unknown = sorted({str(p.get("category")) for p in products if p.get("category") not in keys})
+    if unknown:
+        problems.append("products in undefined groups: " + ", ".join(unknown))
+    ids = [p["id"] for p in products]
+    if len(ids) != len(set(ids)):
+        problems.append("duplicate product ids")
+    if language and data.get("language") not in (None, language):
+        problems.append(f"language is {data.get('language')!r}, expected {language!r}")
+    return problems
+
+
+def _cache_note(fetched: Fetched) -> str | None:
+    age = fetched.headers.get("age")
+    x_cache = fetched.headers.get("x-cache") or fetched.headers.get("cf-cache-status")
+    if (age and age.strip() not in ("", "0")) or (x_cache and "hit" in x_cache.lower()):
+        return f"response may come from a cache (Age={age or '-'}, cache={x_cache or '-'})"
+    return None
+
+
+def is_json_source(fetched: Fetched) -> bool:
+    path = urllib.parse.urlparse(fetched.url).path if "://" in fetched.url else fetched.url
+    return path.lower().endswith(".json") or (fetched.body or "").lstrip().startswith("{")
+
+
+def extract_catalogue_json(language: str, fetched: Fetched) -> Catalogue:
     cat = Catalogue(language, fetched.url)
     if fetched.error:
         cat.error = fetched.error
         return cat
-    age = fetched.headers.get("age")
-    x_cache = fetched.headers.get("x-cache") or fetched.headers.get("cf-cache-status")
-    if (age and age.strip() not in ("", "0")) or (x_cache and "hit" in x_cache.lower()):
-        cat.cache_note = f"response may come from a cache (Age={age or '-'}, cache={x_cache or '-'})"
+    cat.cache_note = _cache_note(fetched)
+    try:
+        data = parse_catalogue_json(fetched.body)
+    except ValueError as exc:
+        cat.error = (f"catalogue JSON unusable: {exc} ({describe_response(fetched)}; "
+                     "a bot-protection or error page is a likely cause)")
+        return cat
+    cat.product_ids = {p["id"] for p in data["products"]}
+    cat.group_keys = {c["key"] for c in data["categories"]}
+    cat.solutions = len(cat.product_ids)
+    cat.groups = len(data["categories"])
+    cat.signals["json products"] = len(data["products"])
+    cat.signals["json groups"] = cat.groups
+    problems = json_problems(data, language)
+    if problems:
+        cat.signals["json problems"] = "; ".join(problems)
+    return cat
+
+
+def extract_any_catalogue(language: str, fetched: Fetched) -> Catalogue:
+    if not fetched.error and is_json_source(fetched):
+        return extract_catalogue_json(language, fetched)
+    return extract_catalogue(language, fetched)
+
+
+def load_catalogue(language: str, spec: str, get: Callable[[str], Fetched]) -> Catalogue:
+    """Try each "|"-separated source in order; the first usable one wins."""
+    failures: list[str] = []
+    cat: Catalogue | None = None
+    for source in [s.strip() for s in spec.split("|") if s.strip()]:
+        cat = extract_any_catalogue(language, load_source(source, get))
+        if not cat.error:
+            if failures:
+                cat.signals["source fallback"] = "used after: " + " | ".join(failures)
+            return cat
+        failures.append(f"{source}: {cat.error}")
+    assert cat is not None, "empty catalogue source list"
+    if len(failures) > 1:
+        cat.error = " | ".join(failures)
+    return cat
+
+
+def extract_catalogue(language: str, fetched: Fetched) -> Catalogue:
+    """Read the HTML overview page (structured JSON islands, cards, counter)."""
+    cat = Catalogue(language, fetched.url)
+    if fetched.error:
+        cat.error = fetched.error
+        return cat
+    cat.cache_note = _cache_note(fetched)
     document = fetched.body
 
     try:
@@ -253,13 +371,9 @@ def extract_catalogue(language: str, fetched: Fetched) -> Catalogue:
         cat.groups = len(set(cards))
         cat.signals["fallback"] = "counted from product cards"
     if cat.solutions is None or cat.groups is None:
-        title = re.search(r"<title[^>]*>(.*?)</title>", document, re.IGNORECASE | re.DOTALL)
-        served = (f"server answered HTTP {fetched.status} with {len(document)} characters"
-                  + (f", title “{html_lib.unescape(title.group(1)).strip()[:80]}”" if title else "")
-                  + (f", server {fetched.headers['server']}" if fetched.headers.get("server") else ""))
         cat.error = "catalogue counts could not be determined: " + "; ".join(
             str(v) for k, v in cat.signals.items() if k.startswith("structured") and isinstance(v, str)) \
-            + f" ({served}; a bot-protection or error page is a likely cause)"
+            + f" ({describe_response(fetched)}; a bot-protection or error page is a likely cause)"
     return cat
 
 
@@ -286,7 +400,14 @@ def check_catalogues(catalogues: list[Catalogue], report: Report) -> None:
         counter = cat.signals.get("visible counter")
         if counter is not None and counter != cat.solutions:
             disagreements.append(f"visible counter {counter} != {cat.solutions}")
-        if "fallback" in cat.signals:
+        if "json problems" in cat.signals:
+            disagreements.append(str(cat.signals["json problems"]))
+        if "source fallback" in cat.signals:
+            report.add("Catalogue", name, WARN,
+                       f"{cat.solutions} solutions, {cat.groups} groups from the fallback source "
+                       f"`{cat.source}`; the primary source was unavailable"
+                       + (": " + "; ".join(disagreements) if disagreements else ""), details)
+        elif "fallback" in cat.signals:
             report.add("Catalogue", name, WARN,
                        f"{cat.solutions} solutions, {cat.groups} groups (structured data missing or "
                        "invalid; fell back to product cards)", details)
@@ -550,8 +671,10 @@ def annotations(report: Report) -> list[str]:
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="check_profile_consistency.py", description=__doc__.split("\n\n")[0])
-    p.add_argument("--catalogue", action="append", default=[], metavar="LANG=URL_OR_FILE",
-                   help="catalogue source per language (default: en and fi live pages)")
+    p.add_argument("--catalogue", action="append", default=[], metavar="LANG=SOURCE[|FALLBACK...]",
+                   help="catalogue source(s) per language: /catalogue.json, the HTML overview page or a "
+                        "local file; '|' separates fallbacks (default: en and fi catalogue.json, then the "
+                        "overview pages)")
     p.add_argument("--profile", action="append", default=[], metavar="PATH_OR_URL",
                    help="profile README; counts are compared when the profile states them")
     p.add_argument("--counts-profile", action="append", default=[], metavar="PATH_OR_URL",
@@ -582,7 +705,7 @@ def run(args: argparse.Namespace, fetch: Callable[..., Fetched] = http_get) -> R
         specs[lang.strip().lower()] = source.strip()
     if not specs:
         specs = dict(DEFAULT_CATALOGUES)
-    catalogues = [extract_catalogue(lang, load_source(src, get)) for lang, src in specs.items()]
+    catalogues = [load_catalogue(lang, src, get) for lang, src in specs.items()]
     check_catalogues(catalogues, report)
     reference = next((c for c in catalogues if c.language == args.reference_language.lower()), None)
 

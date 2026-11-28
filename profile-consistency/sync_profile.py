@@ -42,7 +42,11 @@ MARK_START = pc.MARK_START
 MARK_END = pc.MARK_END
 SECTION_HEADING = "### 📋 All JSP-Product™ solutions"
 INSERT_AFTER = re.compile(r"^.*Explore the complete JSP-Product.*catalogue.*$", re.MULTILINE)
+# Sources tried in order: /catalogue.json, then the HTML overview page.
 DEFAULT_CATALOGUE = pc.DEFAULT_CATALOGUES["en"]
+# Public overview page: base for group links and for product links that the
+# source does not provide.
+DEFAULT_SITE = pc.OVERVIEW_PAGES["en"]
 
 
 class SyncError(Exception):
@@ -58,6 +62,7 @@ class Product:
     type: str
     name: str
     summary: str
+    url: str | None = None
 
 
 @dataclass
@@ -79,8 +84,36 @@ def _text(fragment: str) -> str:
     return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
 
 
+def parse_catalogue_json(body: str) -> list[Group]:
+    """Groups and products from /catalogue.json (schema 1). Raises Unavailable."""
+    try:
+        data = pc.parse_catalogue_json(body)
+    except ValueError as exc:
+        raise Unavailable(f"catalogue JSON unusable: {exc}") from exc
+    problems = pc.json_problems(data)
+    if problems:
+        raise Unavailable("catalogue JSON is inconsistent: " + "; ".join(problems))
+    groups = {c["key"]: Group(c["key"], str(c.get("label") or c["key"])) for c in data["categories"]}
+    for item in data["products"]:
+        url = item.get("url")
+        groups[item["category"]].products.append(Product(
+            item["id"], str(item.get("name") or item["id"]), str(item.get("summary") or ""),
+            url if isinstance(url, str) and url.startswith("https://") else None))
+    if not data["products"]:
+        raise Unavailable("catalogue JSON lists no products")
+    return list(groups.values())
+
+
+def parse_source(fetched: pc.Fetched) -> list[Group]:
+    if fetched.error:
+        raise Unavailable(fetched.error)
+    if pc.is_json_source(fetched):
+        return parse_catalogue_json(fetched.body)
+    return parse_catalogue(fetched.body)
+
+
 def parse_catalogue(document: str) -> list[Group]:
-    """Groups in catalogue order, products in page order. Raises Unavailable."""
+    """Groups in catalogue order, products in page order (HTML page). Raises Unavailable."""
     try:
         categories = pc._island(document, pc.CATEGORIES_ISLAND)
         advisor = pc._island(document, pc.PRODUCTS_ISLAND)
@@ -142,7 +175,7 @@ def render_section(groups: list[Group], catalogue_url: str) -> str:
                   f"<summary><b>{html_lib.escape(group.label)}</b> · {count} "
                   f"{'solution' if count == 1 else 'solutions'}</summary>", ""]
         for product in group.products:
-            url = urllib.parse.urljoin(base, "products_show?type=" + urllib.parse.quote(product.type))
+            url = product.url or urllib.parse.urljoin(base, "products_show?type=" + urllib.parse.quote(product.type))
             item = f"- [{_md(product.name)}]({url})"
             if product.summary:
                 item += f": {_md(product.summary)}"
@@ -226,9 +259,11 @@ def update_profile(text: str, groups: list[Group], catalogue_url: str) -> tuple[
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="sync_profile.py", description=__doc__.split("\n\n")[0])
     p.add_argument("--profile", required=True, help="README to update")
-    p.add_argument("--catalogue", default=DEFAULT_CATALOGUE, help="English catalogue page (URL or file)")
-    p.add_argument("--site-url", default=DEFAULT_CATALOGUE,
-                   help="public catalogue URL used for links when --catalogue is a local file")
+    p.add_argument("--catalogue", default=DEFAULT_CATALOGUE,
+                   help="English catalogue source(s): /catalogue.json, the overview page or a local file; "
+                        "'|' separates fallbacks")
+    p.add_argument("--site-url", default=DEFAULT_SITE,
+                   help="public overview page: base for group links and missing product links")
     p.add_argument("--write", action="store_true", help="write changes (default: dry run)")
     p.add_argument("--pr-body", default="", help="write a pull request description here")
     p.add_argument("--github-output", default="")
@@ -260,24 +295,29 @@ def main(argv: list[str] | None = None, fetch=pc.http_get) -> int:
         _summary(args.summary_file, f"## Catalogue sync: ❌ profile `{args.profile}` not found")
         _outputs(args.github_output, changed="false", unavailable="false", error="true")
         return 2
-    loaded = pc.load_source(args.catalogue,
-                            lambda url: fetch(url, timeout=args.timeout, retries=args.retries))
-    try:
-        if loaded.error:
-            raise Unavailable(loaded.error)
-        groups = parse_catalogue(loaded.body)
-    except Unavailable as exc:
-        diag = pc.extract_catalogue("en", loaded).error if not loaded.error else loaded.error
-        _summary(args.summary_file,
-                 f"## Catalogue sync: ⚠️ catalogue data unavailable, nothing changed\n\n{exc}"
-                 + (f"\n\n{diag}" if diag and diag != str(exc) else ""))
+    get = lambda url: fetch(url, timeout=args.timeout, retries=args.retries)  # noqa: E731
+    groups: list[Group] | None = None
+    used_source, failures = "", []
+    for source in [s.strip() for s in args.catalogue.split("|") if s.strip()]:
+        loaded = pc.load_source(source, get)
+        try:
+            groups = parse_source(loaded)
+            used_source = source
+            break
+        except Unavailable as exc:
+            detail = str(exc)
+            if not loaded.error:
+                detail += f" ({pc.describe_response(loaded)})"
+            failures.append(f"`{source}`: {detail}")
+    if groups is None:
+        _summary(args.summary_file, "## Catalogue sync: ⚠️ catalogue data unavailable, nothing changed\n\n"
+                 + "\n".join(f"- {f}" for f in failures))
         _outputs(args.github_output, changed="false", unavailable="true", error="false")
         return 3
 
     original = profile.read_text(encoding="utf-8")
-    public_url = args.catalogue if re.match(r"^https?://", args.catalogue, re.IGNORECASE) else args.site_url
     try:
-        updated, changes = update_profile(original, groups, public_url)
+        updated, changes = update_profile(original, groups, args.site_url)
     except SyncError as exc:
         _summary(args.summary_file, f"## Catalogue sync: ❌ cannot update `{args.profile}`\n\n{exc}")
         _outputs(args.github_output, changed="false", unavailable="false", error="true")
@@ -290,13 +330,15 @@ def main(argv: list[str] | None = None, fetch=pc.http_get) -> int:
         profile.write_text(updated, encoding="utf-8", newline="\n")
     status = ("✏️ profile updated" if args.write else "✏️ changes needed (dry run)") if changed else "✅ up to date"
     lines = [f"## Catalogue sync: {status}", "",
-             f"English catalogue: **{total} solutions in {used} groups** (`{args.catalogue}`).", ""]
+             f"English catalogue: **{total} solutions in {used} groups** (`{used_source}`).", ""]
+    if failures:
+        lines += ["Fallback source used because:"] + [f"- {f}" for f in failures] + [""]
     lines += [f"- {c}" for c in changes] if changed else ["No changes needed."]
     _summary(args.summary_file, "\n".join(lines))
 
     if args.pr_body and changed:
         body = ["Automated weekly sync of the JSP-Product™ solution list and counts from the English catalogue "
-                f"({public_url.split('?', 1)[0]}).", "",
+                f"(`{used_source}`).", "",
                 f"The catalogue currently has **{total} solutions in {used} solution groups**.", "", "### Changes", ""]
         body += [f"- {c}" for c in changes]
         body += ["", "### Review", "",

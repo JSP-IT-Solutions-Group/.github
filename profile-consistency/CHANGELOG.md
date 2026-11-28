@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-28
+
+### Added
+
+- Read the website's machine-readable `/catalogue.json` (schema version 1)
+  first, in both the check and the sync. Unknown fields are ignored;
+  `count` vs products, undefined groups, duplicate ids and the language are
+  verified.
+- Catalogue sources are `|`-separated fallback lists. The defaults are
+  `/catalogue.json`, then the HTML overview page; using a fallback is a
+  warning that names the reason.
+
+### Changed
+
+- Default `catalogue-en-url`, `catalogue-fi-url` (check) and `catalogue-url`
+  (sync) now list `/catalogue.json` first. The generated profile list is
+  unchanged: product links come from the JSON, group links from the
+  overview page (`--site-url`).
+
 ## [1.2.0] - 2026-11-28
 
 ### Added
@@ -43,7 +62,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   discrepancy.
 - Reusable workflow, weekly scheduled check, synthetic fixtures and tests.
 
-[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.2.0...main
+[Unreleased]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.3.0...main
+[1.3.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.2.0...profile-consistency-v1.3.0
 [1.2.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.1.0...profile-consistency-v1.2.0
 [1.1.0]: https://github.com/JSP-IT-Solutions-Group/.github/compare/profile-consistency-v1.0.0...profile-consistency-v1.1.0
 [1.0.0]: https://github.com/JSP-IT-Solutions-Group/.github/tree/profile-consistency-v1.0.0

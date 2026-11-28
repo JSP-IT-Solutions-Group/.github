@@ -19,13 +19,13 @@ on:
         type: string
         default: ""
       catalogue-en-url:
-        description: English catalogue page.
+        description: English catalogue source(s), tried in order and separated by "|" (/catalogue.json first, the overview page as a fallback).
         type: string
-        default: https://jsp-it.com/products_jsp_overview
+        default: https://jsp-it.com/catalogue.json|https://jsp-it.com/products_jsp_overview
       catalogue-fi-url:
-        description: Finnish catalogue page.
+        description: Finnish catalogue source(s), tried in order and separated by "|".
         type: string
-        default: https://jsp-it.fi/products_jsp_overview
+        default: https://jsp-it.fi/catalogue.json|https://jsp-it.fi/products_jsp_overview
       check-links:
         description: Check links in the profiles.
         type: boolean

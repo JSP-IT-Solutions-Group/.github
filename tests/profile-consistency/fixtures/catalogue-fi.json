@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "language": "fi",
+  "count": 3,
+  "categories": [
+    { "key": "automation", "label": "Automaatio ja tekoäly" },
+    { "key": "data", "label": "Data ja raportointi" }
+  ],
+  "products": [
+    { "id": "products_alpha", "name": "JSP-Alfa™", "summary": "Ensimmäinen synteettinen tuote", "category": "automation", "url": "https://jsp-it.fi/products_show?type=products_alpha" },
+    { "id": "products_beta", "name": "JSP-Beta™", "summary": "Toinen synteettinen tuote", "category": "automation", "url": "https://jsp-it.fi/products_show?type=products_beta" },
+    { "id": "products_gamma", "name": "JSP-Gamma™", "summary": "Kolmas synteettinen tuote", "category": "data", "url": "https://jsp-it.fi/products_show?type=products_gamma" }
+  ]
+}

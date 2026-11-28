@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "language": "en",
+  "count": 3,
+  "categories": [
+    { "key": "automation", "label": "Automation and AI" },
+    { "key": "data", "label": "Data and reporting" }
+  ],
+  "products": [
+    { "id": "products_alpha", "name": "JSP-Alpha™", "summary": "First synthetic product | with a pipe", "category": "automation", "url": "https://jsp-it.com/products_show?type=products_alpha" },
+    { "id": "products_beta", "name": "JSP-Beta [Preview]™", "summary": "Second synthetic product", "category": "automation", "url": "https://jsp-it.com/products_show?type=products_beta" },
+    { "id": "products_gamma", "name": "JSP-Gamma™", "summary": "Third synthetic product", "category": "data", "url": "https://jsp-it.com/products_show?type=products_gamma" }
+  ],
+  "future_field": "unknown fields must be ignored"
+}

@@ -137,7 +137,7 @@ class Updating(Base):
         self.assertIn("removed: products_gamma", pr)
         self.assertIn("solutions: 3 → 2", pr)
         self.assertIn("never merged automatically", pr)
-        self.assertIn(SITE, pr)
+        self.assertIn("catalogue.html", pr)  # names the source that was actually used
 
     def test_no_pr_body_when_unchanged(self) -> None:
         self.run_sync("--write")
