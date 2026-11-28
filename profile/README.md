@@ -32,7 +32,7 @@ Our approach emphasizes:
 
 Our development interests span multiple languages, frameworks, and platforms.
 
-**Languages:** C#, C++, Python, TypeScript, JavaScript, PHP and more.
+**Languages:** C#, C++, Go, Python, Rust, TypeScript, JavaScript, PHP and more.
 
 **Areas:** AI, APIs, web development, mobile applications, system integration, DevOps, cloud infrastructure and automation.
 
