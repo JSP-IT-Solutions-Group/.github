@@ -108,11 +108,12 @@ jobs:
           BRANCH: ${{ inputs.branch }}
           BASE: ${{ github.event.repository.default_branch }}
           PROFILE_PATH: ${{ inputs.profile-path }}
-          SOLUTIONS: ${{ steps.sync.outputs.solutions }}
-          GROUPS: ${{ steps.sync.outputs.groups }}
+          SOLUTION_COUNT: ${{ steps.sync.outputs.solutions }}
+          # Not "GROUPS": that is a bash built-in array (the user's group ids).
+          GROUP_COUNT: ${{ steps.sync.outputs.groups }}
         run: |
           set -euo pipefail
-          title="Sync JSP-Product catalogue: ${SOLUTIONS} solutions in ${GROUPS} groups"
+          title="Sync JSP-Product catalogue: ${SOLUTION_COUNT} solutions in ${GROUP_COUNT} groups"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
